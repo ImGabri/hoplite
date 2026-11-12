@@ -45,7 +45,9 @@ jobs:
         if: steps.version.outputs.released == 'false'
         run: |
           version=${{ steps.version.outputs.version }}
-          gh release create "v$version" "build/libs/slotcycler-$version.jar" \
+          # Also upload under a fixed name so the "latest" download link never changes.
+          cp "build/libs/slotcycler-$version.jar" slotcycler.jar
+          gh release create "v$version" "build/libs/slotcycler-$version.jar" slotcycler.jar \
             --target "$GITHUB_SHA" \
             --title "Slot Cycler $version" \
             --generate-notes

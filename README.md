@@ -39,7 +39,31 @@ cd slotcycler
 ./gradlew build
 ```
 
-The built mod appears at `build/libs/slotcycler.jar` (archive name set in `build.gradle.kts`).
+The built mod appears at `build/libs/slotcycler-<version>.jar`.
+
+### One command: build and install
+
+From the VS Code terminal (or any terminal) in the project folder:
+
+```bash
+./gradlew installMod
+```
+
+On Windows use `.\gradlew installMod`. This builds the jar and copies it into your
+Minecraft `mods` folder, replacing any older Slot Cycler jar. If your mods folder is
+somewhere else, add `-PmodsDir="C:\path\to\mods"`.
+
+In VS Code you can also press `Ctrl+Shift+B`, which runs the same thing.
+
+### One command: download the latest release
+
+No JDK needed; this just downloads the newest released jar:
+
+```bash
+curl -L -o slotcycler.jar https://github.com/ImGabri/slotcycler/releases/latest/download/slotcycler.jar
+```
+
+In Windows PowerShell, type `curl.exe` instead of `curl`.
 
 ---
 
