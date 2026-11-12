@@ -1,0 +1,51 @@
+name: Release
+
+# Builds the mod and publishes a GitHub release for the version in
+# build.gradle.kts. Runs when main changes (or manually) and does nothing if
+# that version has already been released.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.version.outputs.released == 'false'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build
+        if: steps.version.outputs.released == 'false'
+        run: ./gradlew build
+
+      - name: Publish release
+        if: steps.version.outputs.released == 'false'
+        run: |
+          version=${{ steps.version.outputs.version }}
+          gh release create "v$version" "build/libs/slotcycler-$version.jar" \
+            --target "$GITHUB_SHA" \
+            --title "Slot Cycler $version" \
+            --generate-notes

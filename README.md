@@ -12,10 +12,10 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 | Feature | Details |
 |---------|---------|
 | **Keybind** | `X` starts the slot cycle (rebindable via the Controls screen) |
-| **Debounced** | Holding `X` only fires once — no accidental re-triggers |
-| **Thread-safe** | Runs on the main client thread; never touches Minecraft from a background thread |
-| **In-game feedback** | Action-bar messages tell you when the sequence starts and completes |
-| **No magic numbers** | Slots, delays, and attempt counts are named, documented constants |
+| **Fast** | One full switch (pick up + place) every tick; 3 there-and-back cycles finish in 6 ticks |
+| **Surplus drop** | If slot 1 ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
+| **Safe** | Runs on the client thread, ignores key presses mid-sequence, and cancels if you open a container or leave the world |
+| **In-game feedback** | An action-bar message reports the result and how many extras were dropped |
 
 ---
 
@@ -62,11 +62,16 @@ slotcycler/
 
 ## How it works
 
-The mod registers a Fabric `KeyBinding` on `X`. When pressed, a tick-based state machine
-walks through the slot sequence `36 → 37 → 37 → 36` (hotbar slots 1 ↔ 2) up to 3 times,
-waiting 2 ticks between clicks. All interaction happens on the main client thread via
-`ClientPlayerInteractionManager.clickSlot(...)`, so there's no risk of concurrency issues
-or game freezes from background threads.
+The mod registers a Fabric `KeyBinding` on `X`. When pressed, it records how many items
+are in hotbar slot 1, then a tick-based state machine walks the slot sequence
+`36 → 37 → 37 → 36` (hotbar slots 1 ↔ 2) three times, sending two clicks per tick.
+
+Each time the stack is back in slot 1, and for 5 ticks after the last click, the mod
+compares the slot's count with the starting count. Any surplus is dropped one item at a
+time with a `THROW` slot click, which is what `Q` does.
+
+Speed, cycle count and the watch window are the `CLICKS_PER_TICK`, `CYCLES` and
+`SETTLE_TICKS` constants at the top of `SlotCyclerMod.kt`.
 
 ---
 
