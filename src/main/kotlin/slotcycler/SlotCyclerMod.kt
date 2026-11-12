@@ -163,11 +163,26 @@ class SlotCyclerMod : ClientModInitializer {
         }
 
         if (step >= totalSteps) {
+            if (s.ghostClicks) addGhostCopy(player)
             phase = Phase.SETTLING
             wait = s.settleTicks
         } else {
             wait = s.burstDelay
         }
+    }
+
+    /**
+     * Ghost runs end with the item showing in both slots: whichever of A and B
+     * is empty gets a single client-only copy of the other's item.
+     */
+    private fun addGhostCopy(player: ClientPlayerEntity) {
+        val inventory = player.inventory
+        val a = s.slotA - 1
+        val b = s.slotB - 1
+        val (from, to) = if (inventory.getStack(a).isEmpty) b to a else a to b
+        val source = inventory.getStack(from)
+        if (source.isEmpty) return
+        inventory.setStack(to, source.copyWithCount(1))
     }
 
     /**

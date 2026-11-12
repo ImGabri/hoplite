@@ -14,7 +14,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 |---------|---------|
 | **Keybinds** | `X` runs the cycle, `Right Shift` opens settings (both rebindable in Controls) |
 | **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
-| **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them and the result is a ghost item |
+| **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them, ending with a ghost copy so the item shows in both slots |
 | **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
 | **Surplus drop** | If slot A ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
 | **Safe** | Runs on the client thread, ignores key presses mid-run, and cancels if you open a container or leave the world |
@@ -97,7 +97,9 @@ up, place) for the configured number of cycles, sending the configured number of
 per tick. With **Finish in slot B** on, it does one extra move so the stack ends in B.
 
 - **Ghost clicks** run the same clicks through the local inventory only. No packet is
-  sent, so the client and server disagree about where the stack is.
+  sent, so the client and server disagree about where the stack is. The run then ends by
+  putting a single client-only copy of the item in whichever of the two slots is empty,
+  so the item shows in both. Turn the ghost check off if you want the copy to stay.
 - **Ghost check** takes a snapshot of what the client believes, then sends a click that
   does nothing but carries a wrong revision number. The server responds to that mismatch
   by resending the whole inventory. Anything in the snapshot that is missing afterwards

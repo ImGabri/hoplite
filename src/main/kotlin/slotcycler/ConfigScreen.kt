@@ -96,7 +96,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             addDrawableChild(FancyToggle(right, y, label, get, set))
             y += ROW_PITCH
         }
-        toggle("Ghost clicks (client only)", { s.ghostClicks }, { s.ghostClicks = it })
+        toggle("Ghost clicks (copy in both)", { s.ghostClicks }, { s.ghostClicks = it })
         toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
@@ -243,9 +243,11 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         val held = client?.player?.inventory?.getStack(s.slotA - 1)?.takeIf { !it.isEmpty }
             ?: ItemStack(Items.DIAMOND)
         context.drawItem(held, ix, iy)
-        if (s.ghostClicks) {
-            // Wash the item out so it reads as "not really there".
-            context.fill(ix, iy, ix + 16, iy + 16, 0x8010121C.toInt())
+        if (s.ghostClicks && step == total) {
+            // A ghost run ends with a washed-out copy in the other slot.
+            val gx = if (ix == ax) bx else ax
+            context.drawItem(held, gx, barY + 1)
+            context.fill(gx, barY + 1, gx + 16, barY + 17, 0x8010121C.toInt())
         }
 
         val ms = runTicks * MS_PER_TICK

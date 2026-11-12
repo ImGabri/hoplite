@@ -21,7 +21,10 @@ class Settings {
     var settleTicks = 5
     /** Ticks to wait for the server's answer during a ghost check. */
     var verifyTicks = 10
-    /** Apply clicks on the client only, so the server never sees them. */
+    /**
+     * Apply clicks on the client only, so the server never sees them, and
+     * finish with a single ghost copy so the item shows in both slots.
+     */
     var ghostClicks = false
     /** After the run, ask the server for the real inventory and count ghost items. */
     var ghostCheck = true
