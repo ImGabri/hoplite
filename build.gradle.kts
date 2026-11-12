@@ -1,37 +1,38 @@
 plugins {
-    id("fabric-loom") version "1.6.11"
-    kotlin("jvm") version "1.9.24"
+    id("fabric-loom") version "1.14.10"
+    kotlin("jvm") version "2.3.0"
 }
 
 version = "1.0.0"
-group = "com.hoplite"
+group = "com.example.slotcycler"
 
-repositories {
-    mavenCentral()
+base {
+    archivesName.set("slotcycler")
 }
 
 dependencies {
-    minecraft("com.mojang:minecraft:1.21.1")
-    mappings("net.fabricmc:yarn:1.21.1+build.2:v2")
-    modImplementation("net.fabricmc:fabric-loader:0.15.11")
-    // Fabric API for Minecraft 1.21.1 (0.93.0+1.21 does not exist).
-    modImplementation("net.fabricmc.fabric-api:fabric-api:0.102.1+1.21.1")
-    
-    // Allow Kotlin Standard Library usage
-    implementation(kotlin("stdlib"))
+    minecraft("com.mojang:minecraft:1.21.11")
+    mappings("net.fabricmc:yarn:1.21.11+build.6:v2")
+    modImplementation("net.fabricmc:fabric-loader:0.18.2")
+    modImplementation("net.fabricmc.fabric-api:fabric-api:0.141.3+1.21.11")
+    // Provides the Kotlin standard library at runtime (install the
+    // fabric-language-kotlin mod alongside this one).
+    modImplementation("net.fabricmc:fabric-language-kotlin:1.14.2+kotlin.2.4.21")
 }
 
-tasks.jar {
-    archiveFileName.set("hopliter.jar")
+// Fill in ${version} in fabric.mod.json.
+tasks.processResources {
+    inputs.property("version", project.version)
+    filesMatching("fabric.mod.json") {
+        expand("version" to project.version)
+    }
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    kotlinOptions.jvmTarget = "17"
+kotlin {
+    jvmToolchain(21)
 }
 
-// Keep Java compilation on the same target as Kotlin (the Gradle daemon runs
-// on Java 21, which would otherwise default compileJava to 21).
-tasks.withType<JavaCompile> {
-    sourceCompatibility = "17"
-    targetCompatibility = "17"
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }

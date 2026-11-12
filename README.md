@@ -1,8 +1,8 @@
-# hoplite
+# Slot Cycler
 
-A lightweight Fabric client mod for **Hoplite.gg** (Minecraft 1.21.1).
+A lightweight Fabric client mod (Minecraft 1.21.11).
 
-Press **`X`** to cycle an item between hotbar slots 1 and 2 repeatedly.  
+Press **`X`** to cycle an item between hotbar slots 1 and 2 repeatedly.
 Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/).
 
 ---
@@ -11,7 +11,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 
 | Feature | Details |
 |---------|---------|
-| **Keybind** | `X` starts the slot cycle (configurable via the default keybinds screen) |
+| **Keybind** | `X` starts the slot cycle (rebindable via the Controls screen) |
 | **Debounced** | Holding `X` only fires once — no accidental re-triggers |
 | **Thread-safe** | Runs on the main client thread; never touches Minecraft from a background thread |
 | **In-game feedback** | Action-bar messages tell you when the sequence starts and completes |
@@ -21,37 +21,38 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 
 ## Installation
 
-1. Install [Fabric Loader](https://fabricmc.net/install/) for Minecraft **1.21.1**.
-2. Download the latest `hopliter.jar` from [Releases](https://github.com/ImGabri/hoplite/releases).
-3. Drop the jar into your `mods/` folder.
-4. Launch the game and press **`X`** in-game.
+1. Install [Fabric Loader](https://fabricmc.net/install/) for Minecraft **1.21.11**.
+2. Install [Fabric API](https://modrinth.com/mod/fabric-api) and [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin) into your `mods/` folder.
+3. Download the latest `slotcycler.jar` from [Releases](https://github.com/ImGabri/slotcycler/releases).
+4. Drop the jar into your `mods/` folder.
+5. Launch the game and press **`X`** in-game.
 
 ---
 
 ## Building from source
 
-Requires **JDK 21** (Fabric Loom setup) and **Gradle**.
+Requires **JDK 21**.
 
 ```bash
-git clone https://github.com/ImGabri/hoplite.git
-cd hoplite
-./gradlew jar
+git clone https://github.com/ImGabri/slotcycler.git
+cd slotcycler
+./gradlew build
 ```
 
-The built mod appears at `build/libs/hopliter.jar` (archive name set in `build.gradle.kts`).
+The built mod appears at `build/libs/slotcycler.jar` (archive name set in `build.gradle.kts`).
 
 ---
 
 ## Project structure
 
 ```
-hoplite/
+slotcycler/
 ├── build.gradle.kts          # Gradle build (Fabric Loom + Kotlin)
 ├── gradle.properties         # Gradle configuration
 ├── settings.gradle.kts
 ├── src/
 │   └── main/
-│       ├── kotlin/hoplitedupe/HopliteDupeMod.kt   # mod logic
+│       ├── kotlin/slotcycler/SlotCyclerMod.kt     # mod logic
 │       └── resources/fabric.mod.json              # mod metadata
 ├── LICENSE                   # MIT
 └── README.md                 # this file
