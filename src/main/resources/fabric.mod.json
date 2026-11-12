@@ -3,7 +3,7 @@
   "id": "slotcycler",
   "version": "${version}",
   "name": "Slot Cycler",
-  "description": "Client-side utility — press X to cycle hotbar slots 1 & 2 and drop any surplus items.",
+  "description": "Client-side utility: cycle an item between two hotbar slots, check for ghost items and drop surplus. X to run, Right Shift for settings.",
   "authors": ["ImGabri"],
   "contact": {
     "homepage": "https://github.com/ImGabri/slotcycler",

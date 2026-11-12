@@ -2,7 +2,8 @@
 
 A lightweight Fabric client mod (Minecraft 1.21.11).
 
-Press **`X`** to cycle an item between hotbar slots 1 and 2 repeatedly.
+Press **`X`** to cycle an item between two hotbar slots, check for ghost items, and drop
+any surplus. Press **`Right Shift`** to open the settings screen.
 Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/).
 
 ---
@@ -11,11 +12,14 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 
 | Feature | Details |
 |---------|---------|
-| **Keybind** | `X` starts the slot cycle (rebindable via the Controls screen) |
-| **Fast** | One full switch (pick up + place) every tick; 3 there-and-back cycles finish in 6 ticks |
-| **Surplus drop** | If slot 1 ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
-| **Safe** | Runs on the client thread, ignores key presses mid-sequence, and cancels if you open a container or leave the world |
-| **In-game feedback** | An action-bar message reports the result and how many extras were dropped |
+| **Keybinds** | `X` runs the cycle, `Right Shift` opens settings (both rebindable in Controls) |
+| **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
+| **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them and the result is a ghost item |
+| **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
+| **Surplus drop** | If slot A ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
+| **Safe** | Runs on the client thread, ignores key presses mid-run, and cancels if you open a container or leave the world |
+
+Settings are saved to `config/slotcycler.json`.
 
 ---
 
@@ -76,7 +80,9 @@ slotcycler/
 ├── settings.gradle.kts
 ├── src/
 │   └── main/
-│       ├── kotlin/slotcycler/SlotCyclerMod.kt     # mod logic
+│       ├── kotlin/slotcycler/SlotCyclerMod.kt     # run logic
+│       ├── kotlin/slotcycler/Settings.kt          # saved options
+│       ├── kotlin/slotcycler/ConfigScreen.kt      # settings screen
 │       └── resources/fabric.mod.json              # mod metadata
 ├── LICENSE                   # MIT
 └── README.md                 # this file
@@ -86,16 +92,19 @@ slotcycler/
 
 ## How it works
 
-The mod registers a Fabric `KeyBinding` on `X`. When pressed, it records how many items
-are in hotbar slot 1, then a tick-based state machine walks the slot sequence
-`36 → 37 → 37 → 36` (hotbar slots 1 ↔ 2) three times, sending two clicks per tick.
+A tick-based state machine walks the slot sequence A → B → B → A (pick up, place, pick
+up, place) for the configured number of cycles, sending the configured number of clicks
+per tick. With **Finish in slot B** on, it does one extra move so the stack ends in B.
 
-Each time the stack is back in slot 1, and for 5 ticks after the last click, the mod
-compares the slot's count with the starting count. Any surplus is dropped one item at a
-time with a `THROW` slot click, which is what `Q` does.
-
-Speed, cycle count and the watch window are the `CLICKS_PER_TICK`, `CYCLES` and
-`SETTLE_TICKS` constants at the top of `SlotCyclerMod.kt`.
+- **Ghost clicks** run the same clicks through the local inventory only. No packet is
+  sent, so the client and server disagree about where the stack is.
+- **Ghost check** takes a snapshot of what the client believes, then sends a click that
+  does nothing but carries a wrong revision number. The server responds to that mismatch
+  by resending the whole inventory. Anything in the snapshot that is missing afterwards
+  was a ghost, and the resend also clears it.
+- **Surplus drop** compares slot A with its starting count and drops the difference with
+  `THROW` slot clicks, which is what `Q` does. When a ghost check is on, it waits for
+  the server's answer first so it never acts on ghost counts.
 
 ---
 
