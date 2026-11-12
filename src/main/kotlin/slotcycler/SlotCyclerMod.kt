@@ -6,7 +6,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.client.util.InputUtil
-import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
@@ -15,109 +15,133 @@ import org.lwjgl.glfw.GLFW
 /**
  * Slot Cycler.
  *
- * Press 'X' to move the item in player-inventory slot 36 (hotbar slot 1)
- * through slot 37 (hotbar slot 2) and back, repeating [ATTEMPTS] times.
+ * Press 'X' to move the item in hotbar slot 1 to hotbar slot 2 and back,
+ * [CYCLES] times. If slot 1 ever holds more items than it did when the
+ * sequence started, the surplus is dropped (the same thing pressing Q does).
  *
- *  - Uses a Fabric [KeyBinding] registered once via [KeyBindingHelper]: no raw
- *    GLFW window-handle lookups and no key binding re-created every tick.
- *  - [KeyBinding.wasPressed] debounces input, so holding the key does not
- *    restart the sequence every tick.
- *  - The click sequence runs on the main client thread as a tick state machine,
- *    so [net.minecraft.client.network.ClientPlayerInteractionManager.clickSlot]
- *    is never invoked from a background thread (thread-safe, no game freeze).
+ * Everything runs on the client thread as a small tick state machine.
  */
 class SlotCyclerMod : ClientModInitializer {
 
-    companion object {
-        /** Mod id, used for the keybinding category namespace. */
-        private const val MOD_ID = "slotcycler"
-        /** GLFW key code for the 'X' key. */
-        private const val TRIGGER_KEY = GLFW.GLFW_KEY_X
-        /** Sync id of the player's own inventory container. */
-        private const val PLAYER_INVENTORY_SYNC_ID = 0
-        /** Mouse button used for clicks (0 = left click). */
-        private const val MOUSE_BUTTON_LEFT = 0
-        /** Ticks to wait between each click step. */
-        private const val STEP_DELAY_TICKS = 2
-        /** How many times the four-step slot sequence repeats. */
-        private const val ATTEMPTS = 3
+    private companion object {
+        const val MOD_ID = "slotcycler"
+        const val TRIGGER_KEY = GLFW.GLFW_KEY_X
+        const val MOUSE_BUTTON_LEFT = 0
+
+        /** Screen-handler slot ids of hotbar slots 1 and 2. */
+        const val SLOT_A = 36
+        const val SLOT_B = 37
+        /** Inventory index of hotbar slot 1 (the slot watched for extra items). */
+        const val WATCHED_HOTBAR_INDEX = 0
+
         /**
-         * Slot order: pick up slot 36, place in 37, pick up 37, place back in 36.
-         * Every step is a left click ([SlotActionType.PICKUP]): picking up an
-         * empty slot grabs the stack, clicking a slot while holding a stack
-         * places it.
+         * Clicks sent per tick. 2 = one complete switch (pick up + place) every
+         * tick, so the cursor never holds the stack across ticks. Use 4 for a
+         * full there-and-back per tick, or 1 for a slower, gentler pace.
          */
-        private val SLOT_SEQUENCE = intArrayOf(36, 37, 37, 36)
+        const val CLICKS_PER_TICK = 2
+        /** How many there-and-back cycles one key press performs. */
+        const val CYCLES = 3
+        /** Ticks to keep watching slot 1 after the last click, for server updates. */
+        const val SETTLE_TICKS = 5
+        /** Safety cap on items dropped in a single tick. */
+        const val MAX_DROPS_PER_TICK = 64
+
+        /** Pick up A, place in B, pick up B, place back in A. */
+        val SLOT_SEQUENCE = intArrayOf(SLOT_A, SLOT_B, SLOT_B, SLOT_A)
+        val TOTAL_STEPS = SLOT_SEQUENCE.size * CYCLES
     }
 
-    /** Custom keybinding category (1.21.11 requires a [KeyBinding.Category]). */
-    private val category: KeyBinding.Category =
-        KeyBinding.Category.create(Identifier.of(MOD_ID, "main"))
-
-    /** Key that starts the cycle sequence. */
-    private val cycleKey: KeyBinding = KeyBinding(
+    private val cycleKey = KeyBinding(
         "key.$MOD_ID.cycle",
         InputUtil.Type.KEYSYM,
         TRIGGER_KEY,
-        category
+        KeyBinding.Category.create(Identifier.of(MOD_ID, "main"))
     )
 
-    /** Whether a sequence is currently running. */
     private var active = false
-    /** Index of the next click step to execute. */
+    /** Index of the next click to send. */
     private var step = 0
-    /** Ticks remaining before the next click step. */
-    private var delay = 0
+    /** Ticks left in the post-sequence watch window. */
+    private var settle = 0
+    /** Item count in slot 1 when the sequence started. */
+    private var startCount = 0
+    /** Surplus items dropped during this sequence. */
+    private var dropped = 0
 
     override fun onInitializeClient() {
         KeyBindingHelper.registerKeyBinding(cycleKey)
+        ClientTickEvents.END_CLIENT_TICK.register(::onTick)
+    }
 
-        ClientTickEvents.END_CLIENT_TICK.register { client ->
-            // Start a new sequence when the key is pressed (debounced by wasPressed()).
-            if (!active && cycleKey.wasPressed()) {
-                startSequence(client)
+    private fun onTick(client: MinecraftClient) {
+        // Always drain presses so ones made mid-sequence don't queue up a re-run.
+        var pressed = false
+        while (cycleKey.wasPressed()) pressed = true
+
+        if (!active) {
+            if (pressed) start(client)
+            return
+        }
+
+        val player = client.player
+        val manager = client.interactionManager
+        // Left the world or opened a container: stop rather than click the wrong slots.
+        if (player == null || manager == null ||
+            player.currentScreenHandler !== player.playerScreenHandler
+        ) {
+            active = false
+            player?.sendMessage(Text.literal("[SlotCycler] Cancelled"), true)
+            return
+        }
+        val syncId = player.playerScreenHandler.syncId
+
+        // The stack is back in slot 1 at every cycle boundary; check it there.
+        if (step % SLOT_SEQUENCE.size == 0) {
+            val surplus = (watchedCount(player) - startCount).coerceAtMost(MAX_DROPS_PER_TICK)
+            repeat(surplus) {
+                // THROW with button 0 drops one item from the slot, like pressing Q.
+                manager.clickSlot(syncId, SLOT_A, MOUSE_BUTTON_LEFT, SlotActionType.THROW, player)
             }
-            if (active) {
-                advanceSequence(client)
-            }
+            if (surplus > 0) dropped += surplus
+        }
+
+        if (step >= TOTAL_STEPS) {
+            if (settle-- <= 0) finish(player)
+            return
+        }
+
+        repeat(minOf(CLICKS_PER_TICK, TOTAL_STEPS - step)) {
+            manager.clickSlot(
+                syncId, SLOT_SEQUENCE[step % SLOT_SEQUENCE.size],
+                MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player
+            )
+            step++
         }
     }
 
-    private fun startSequence(client: MinecraftClient) {
-        val player: PlayerEntity = client.player ?: return
+    private fun start(client: MinecraftClient) {
+        val player = client.player ?: return
+        if (player.currentScreenHandler !== player.playerScreenHandler) return
 
+        val count = watchedCount(player)
+        if (count == 0) {
+            player.sendMessage(Text.literal("[SlotCycler] Slot 1 is empty"), true)
+            return
+        }
         active = true
         step = 0
-        delay = 0
-        player.sendMessage(Text.literal("[SlotCycler] Sequence started ($ATTEMPTS x)"), true)
+        settle = SETTLE_TICKS
+        startCount = count
+        dropped = 0
     }
 
-    private fun advanceSequence(client: MinecraftClient) {
-        if (delay > 0) {
-            delay--
-            return
-        }
-
-        val player: PlayerEntity = client.player ?: return
-        val manager = client.interactionManager ?: return
-
-        val totalSteps = SLOT_SEQUENCE.size * ATTEMPTS
-        if (step >= totalSteps) {
-            finishSequence(client)
-            return
-        }
-
-        val slot = SLOT_SEQUENCE[step % SLOT_SEQUENCE.size]
-        manager.clickSlot(PLAYER_INVENTORY_SYNC_ID, slot, MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player)
-
-        step++
-        delay = STEP_DELAY_TICKS
-    }
-
-    private fun finishSequence(client: MinecraftClient) {
+    private fun finish(player: ClientPlayerEntity) {
         active = false
-        step = 0
-        delay = 0
-        client.player?.sendMessage(Text.literal("[SlotCycler] Sequence complete!"), true)
+        val result = if (dropped > 0) "dropped $dropped extra" else "no extra items"
+        player.sendMessage(Text.literal("[SlotCycler] Done: $result"), true)
     }
+
+    private fun watchedCount(player: ClientPlayerEntity): Int =
+        player.inventory.getStack(WATCHED_HOTBAR_INDEX).count
 }
