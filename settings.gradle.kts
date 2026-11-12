@@ -1,4 +1,4 @@
-rootProject.name = "hopliter"
+rootProject.name = "slotcycler"
 
 pluginManagement {
     repositories {

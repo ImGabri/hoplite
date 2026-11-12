@@ -1,23 +1,24 @@
 {
   "schemaVersion": 1,
-  "id": "hoplitedupe",
+  "id": "slotcycler",
   "version": "${version}",
-  "name": "Hoplite Dupe",
-  "description": "Client-side utility for Hoplite.gg — press X to cycle hotbar slots 1 & 2.",
+  "name": "Slot Cycler",
+  "description": "Client-side utility — press X to cycle hotbar slots 1 & 2.",
   "authors": ["ImGabri"],
   "contact": {
-    "homepage": "https://github.com/ImGabri/hoplite",
-    "issues": "https://github.com/ImGabri/hoplite/issues",
-    "sources": "https://github.com/ImGabri/hoplite"
+    "homepage": "https://github.com/ImGabri/slotcycler",
+    "issues": "https://github.com/ImGabri/slotcycler/issues",
+    "sources": "https://github.com/ImGabri/slotcycler"
   },
   "entrypoints": {
-    "client": ["hoplitedupe.HopliteDupeMod"]
+    "client": ["slotcycler.SlotCyclerMod"]
   },
   "mixins": [],
   "depends": {
-    "fabricloader": ">=0.15.11",
+    "fabricloader": ">=0.18.2",
     "fabric-api": "*",
-    "minecraft": "~1.21.1",
-    "java": ">=17"
+    "fabric-language-kotlin": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
   }
 }
