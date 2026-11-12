@@ -244,6 +244,8 @@ class SlotCyclerMod : ClientModInitializer {
 
     private fun finish(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
         if (s.dropSurplus) dropSurplus(player, manager)
+        // The ghost check's resync wiped the ghost copy; put it back so it stays.
+        if (s.ghostClicks && s.ghostCheck) addGhostCopy(player)
         phase = Phase.IDLE
 
         val parts = mutableListOf<String>()

@@ -3,7 +3,7 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
-version = "1.2.1"
+version = "1.2.2"
 group = "com.example.slotcycler"
 
 base {

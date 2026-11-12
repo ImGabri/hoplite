@@ -99,7 +99,8 @@ per tick. With **Finish in slot B** on, it does one extra move so the stack ends
 - **Ghost clicks** run the same clicks through the local inventory only. No packet is
   sent, so the client and server disagree about where the stack is. The run then ends by
   putting a single client-only copy of the item in whichever of the two slots is empty,
-  so the item shows in both. Turn the ghost check off if you want the copy to stay.
+  so the item shows in both. The copy is put back after a ghost check, so it stays in
+  your inventory until the server next updates that slot.
 - **Ghost check** takes a snapshot of what the client believes, then sends a click that
   does nothing but carries a wrong revision number. The server responds to that mismatch
   by resending the whole inventory. Anything in the snapshot that is missing afterwards
