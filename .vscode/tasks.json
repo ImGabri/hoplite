@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install mod into Minecraft",
+      "type": "shell",
+      "command": "./gradlew installMod",
+      "windows": { "command": ".\\gradlew.bat installMod" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build jar only",
+      "type": "shell",
+      "command": "./gradlew build",
+      "windows": { "command": ".\\gradlew.bat build" },
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

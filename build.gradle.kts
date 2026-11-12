@@ -3,7 +3,7 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
-version = "1.1.0"
+version = "1.2.2"
 group = "com.example.slotcycler"
 
 base {
@@ -35,4 +35,28 @@ kotlin {
 java {
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
+}
+
+// `./gradlew installMod` builds the jar and copies it into your Minecraft mods
+// folder. Pass -PmodsDir=<path> if yours is not in the default location.
+tasks.register<Copy>("installMod") {
+    group = "mod"
+    description = "Builds the mod jar and copies it into the Minecraft mods folder."
+
+    val home = System.getProperty("user.home")
+    val os = System.getProperty("os.name").lowercase()
+    val defaultModsDir = when {
+        "win" in os -> "${System.getenv("APPDATA") ?: "$home/AppData/Roaming"}/.minecraft/mods"
+        "mac" in os -> "$home/Library/Application Support/minecraft/mods"
+        else -> "$home/.minecraft/mods"
+    }
+    val modsDir = (findProperty("modsDir") as String?) ?: defaultModsDir
+
+    // Remove older versions of this mod so Fabric doesn't see duplicates.
+    doFirst {
+        fileTree(modsDir) { include("${project.name}-*.jar") }.forEach { it.delete() }
+    }
+    from(tasks.named("remapJar"))
+    into(modsDir)
+    doLast { println("Installed ${project.name}-${project.version}.jar to $modsDir") }
 }

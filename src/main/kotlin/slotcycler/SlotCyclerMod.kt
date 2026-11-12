@@ -1,13 +1,18 @@
 package slotcycler
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.network.ClientPlayerEntity
+import net.minecraft.client.network.ClientPlayerInteractionManager
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.client.util.InputUtil
-import net.minecraft.client.network.ClientPlayerEntity
+import net.minecraft.item.ItemStack
+import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket
 import net.minecraft.screen.slot.SlotActionType
+import net.minecraft.screen.sync.ItemStackHash
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
@@ -15,72 +20,67 @@ import org.lwjgl.glfw.GLFW
 /**
  * Slot Cycler.
  *
- * Press 'X' to move the item in hotbar slot 1 to hotbar slot 2 and back,
- * [CYCLES] times. If slot 1 ever holds more items than it did when the
- * sequence started, the surplus is dropped (the same thing pressing Q does).
+ * Press the run key to move the stack in hotbar slot A to slot B and back.
+ * Afterwards the mod can ask the server for the real inventory to count ghost
+ * items (items the client shows but the server does not have), and drop
+ * anything slot A holds beyond what it started with.
  *
- * Everything runs on the client thread as a small tick state machine.
+ * Everything is driven by [Settings] and runs on the client thread as a small
+ * tick state machine.
  */
 class SlotCyclerMod : ClientModInitializer {
 
-    private companion object {
+    companion object {
         const val MOD_ID = "slotcycler"
-        const val TRIGGER_KEY = GLFW.GLFW_KEY_X
-        const val MOUSE_BUTTON_LEFT = 0
+        private const val MOUSE_BUTTON_LEFT = 0
+        /** Screen-handler slot id of hotbar slot 1. */
+        private const val HOTBAR_START = 36
+        private const val MAX_DROPS_PER_TICK = 64
+        /** A click on this slot id is accepted by the server and does nothing. */
+        private const val NO_OP_SLOT: Short = -1
 
-        /** Screen-handler slot ids of hotbar slots 1 and 2. */
-        const val SLOT_A = 36
-        const val SLOT_B = 37
-        /** Inventory index of hotbar slot 1 (the slot watched for extra items). */
-        const val WATCHED_HOTBAR_INDEX = 0
-
-        /**
-         * Clicks sent per tick. 2 = one complete switch (pick up + place) every
-         * tick, so the cursor never holds the stack across ticks. Use 4 for a
-         * full there-and-back per tick, or 1 for a slower, gentler pace.
-         */
-        const val CLICKS_PER_TICK = 2
-        /** How many there-and-back cycles one key press performs. */
-        const val CYCLES = 3
-        /** Ticks to keep watching slot 1 after the last click, for server updates. */
-        const val SETTLE_TICKS = 5
-        /** Safety cap on items dropped in a single tick. */
-        const val MAX_DROPS_PER_TICK = 64
-
-        /** Pick up A, place in B, pick up B, place back in A. */
-        val SLOT_SEQUENCE = intArrayOf(SLOT_A, SLOT_B, SLOT_B, SLOT_A)
-        val TOTAL_STEPS = SLOT_SEQUENCE.size * CYCLES
+        /** Set by the settings screen's "Run" button; consumed next tick. */
+        var runRequested = false
     }
 
-    private val cycleKey = KeyBinding(
-        "key.$MOD_ID.cycle",
-        InputUtil.Type.KEYSYM,
-        TRIGGER_KEY,
-        KeyBinding.Category.create(Identifier.of(MOD_ID, "main"))
-    )
+    private enum class Phase { IDLE, CLICKING, SETTLING, VERIFYING }
 
-    private var active = false
-    /** Index of the next click to send. */
+    private val category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"))
+    private val cycleKey =
+        KeyBinding("key.$MOD_ID.cycle", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category)
+    private val configKey =
+        KeyBinding("key.$MOD_ID.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, category)
+
+    private var phase = Phase.IDLE
+    /** Settings captured when the run started, so edits mid-run can't break it. */
+    private var s = Settings.current
+    private var sequence = IntArray(4)
+    private var totalSteps = 0
     private var step = 0
-    /** Ticks left in the post-sequence watch window. */
-    private var settle = 0
-    /** Item count in slot 1 when the sequence started. */
+    private var wait = 0
     private var startCount = 0
-    /** Surplus items dropped during this sequence. */
     private var dropped = 0
+    private var ghosts = 0
+    /** The client's view of every slot (cursor last) taken just before a ghost check. */
+    private var snapshot: List<ItemStack> = emptyList()
 
     override fun onInitializeClient() {
         KeyBindingHelper.registerKeyBinding(cycleKey)
+        KeyBindingHelper.registerKeyBinding(configKey)
         ClientTickEvents.END_CLIENT_TICK.register(::onTick)
     }
 
     private fun onTick(client: MinecraftClient) {
-        // Always drain presses so ones made mid-sequence don't queue up a re-run.
-        var pressed = false
+        // Always drain presses so ones made mid-run don't queue up a re-run.
+        var pressed = runRequested
+        runRequested = false
         while (cycleKey.wasPressed()) pressed = true
+        var openConfig = false
+        while (configKey.wasPressed()) openConfig = true
 
-        if (!active) {
-            if (pressed) start(client)
+        if (phase == Phase.IDLE) {
+            if (openConfig && client.currentScreen == null) client.setScreen(ConfigScreen())
+            else if (pressed) start(client)
             return
         }
 
@@ -90,33 +90,24 @@ class SlotCyclerMod : ClientModInitializer {
         if (player == null || manager == null ||
             player.currentScreenHandler !== player.playerScreenHandler
         ) {
-            active = false
+            phase = Phase.IDLE
             player?.sendMessage(Text.literal("[SlotCycler] Cancelled"), true)
             return
         }
-        val syncId = player.playerScreenHandler.syncId
 
-        // The stack is back in slot 1 at every cycle boundary; check it there.
-        if (step % SLOT_SEQUENCE.size == 0) {
-            val surplus = (watchedCount(player) - startCount).coerceAtMost(MAX_DROPS_PER_TICK)
-            repeat(surplus) {
-                // THROW with button 0 drops one item from the slot, like pressing Q.
-                manager.clickSlot(syncId, SLOT_A, MOUSE_BUTTON_LEFT, SlotActionType.THROW, player)
+        when (phase) {
+            Phase.CLICKING -> clickTick(player, manager)
+            Phase.SETTLING -> {
+                if (dropsAsItGoes()) dropSurplus(player, manager)
+                if (wait-- <= 0) {
+                    if (s.ghostCheck) beginGhostCheck(player) else finish(player, manager)
+                }
             }
-            if (surplus > 0) dropped += surplus
-        }
-
-        if (step >= TOTAL_STEPS) {
-            if (settle-- <= 0) finish(player)
-            return
-        }
-
-        repeat(minOf(CLICKS_PER_TICK, TOTAL_STEPS - step)) {
-            manager.clickSlot(
-                syncId, SLOT_SEQUENCE[step % SLOT_SEQUENCE.size],
-                MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player
-            )
-            step++
+            Phase.VERIFYING -> if (wait-- <= 0) {
+                ghosts = countGhosts(player)
+                finish(player, manager)
+            }
+            Phase.IDLE -> {}
         }
     }
 
@@ -124,24 +115,146 @@ class SlotCyclerMod : ClientModInitializer {
         val player = client.player ?: return
         if (player.currentScreenHandler !== player.playerScreenHandler) return
 
-        val count = watchedCount(player)
-        if (count == 0) {
-            player.sendMessage(Text.literal("[SlotCycler] Slot 1 is empty"), true)
+        s = Settings.current
+        if (s.slotA == s.slotB) {
+            player.sendMessage(Text.literal("[SlotCycler] Slot A and slot B are the same"), true)
             return
         }
-        active = true
+        val count = watchedCount(player)
+        if (count == 0) {
+            player.sendMessage(Text.literal("[SlotCycler] Slot ${s.slotA} is empty"), true)
+            return
+        }
+
+        val a = HOTBAR_START + s.slotA - 1
+        val b = HOTBAR_START + s.slotB - 1
+        // Pick up A, place in B, pick up B, place back in A.
+        sequence = intArrayOf(a, b, b, a)
+        totalSteps = s.totalClicks()
         step = 0
-        settle = SETTLE_TICKS
+        wait = 0
         startCount = count
         dropped = 0
+        ghosts = 0
+        phase = Phase.CLICKING
     }
 
-    private fun finish(player: ClientPlayerEntity) {
-        active = false
-        val result = if (dropped > 0) "dropped $dropped extra" else "no extra items"
-        player.sendMessage(Text.literal("[SlotCycler] Done: $result"), true)
+    private fun clickTick(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
+        if (wait > 0) {
+            wait--
+            return
+        }
+        // The stack is back in slot A at every cycle boundary; check it there.
+        if (step % sequence.size == 0 && dropsAsItGoes()) dropSurplus(player, manager)
+
+        repeat(minOf(s.clicksPerTick, totalSteps - step)) {
+            val slot = sequence[step % sequence.size]
+            if (s.ghostClicks) {
+                // Client only: the server is never told, so the result is a ghost.
+                player.playerScreenHandler
+                    .onSlotClick(slot, MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player)
+            } else {
+                manager.clickSlot(
+                    player.playerScreenHandler.syncId, slot,
+                    MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player
+                )
+            }
+            step++
+        }
+
+        if (step >= totalSteps) {
+            if (s.ghostClicks) addGhostCopy(player)
+            phase = Phase.SETTLING
+            wait = s.settleTicks
+        } else {
+            wait = s.burstDelay
+        }
+    }
+
+    /**
+     * Ghost runs end with the item showing in both slots: whichever of A and B
+     * is empty gets a single client-only copy of the other's item.
+     */
+    private fun addGhostCopy(player: ClientPlayerEntity) {
+        val inventory = player.inventory
+        val a = s.slotA - 1
+        val b = s.slotB - 1
+        val (from, to) = if (inventory.getStack(a).isEmpty) b to a else a to b
+        val source = inventory.getStack(from)
+        if (source.isEmpty) return
+        inventory.setStack(to, source.copyWithCount(1))
+    }
+
+    /**
+     * Surplus is dropped during the run only when the client's counts can be
+     * trusted as they are. With ghost clicks or a pending ghost check, wait
+     * until the end instead.
+     */
+    private fun dropsAsItGoes() = s.dropSurplus && !s.ghostClicks && !s.ghostCheck
+
+    private fun dropSurplus(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
+        val surplus = (watchedCount(player) - startCount).coerceAtMost(MAX_DROPS_PER_TICK)
+        repeat(surplus) {
+            // THROW with button 0 drops one item from the slot, like pressing Q.
+            manager.clickSlot(
+                player.playerScreenHandler.syncId, HOTBAR_START + s.slotA - 1,
+                MOUSE_BUTTON_LEFT, SlotActionType.THROW, player
+            )
+        }
+        if (surplus > 0) dropped += surplus
+    }
+
+    /**
+     * Remember what the client believes, then send a do-nothing click carrying
+     * a deliberately wrong revision number. The server answers a revision
+     * mismatch by resending the whole inventory, which overwrites any ghosts.
+     */
+    private fun beginGhostCheck(player: ClientPlayerEntity) {
+        val handler = player.playerScreenHandler
+        snapshot = handler.slots.map { it.stack.copy() } + handler.cursorStack.copy()
+        player.networkHandler.sendPacket(
+            ClickSlotC2SPacket(
+                handler.syncId, (handler.revision + 1) and 0x7FFF, NO_OP_SLOT,
+                MOUSE_BUTTON_LEFT.toByte(), SlotActionType.PICKUP,
+                Int2ObjectMaps.emptyMap(), ItemStackHash.EMPTY
+            )
+        )
+        phase = Phase.VERIFYING
+        wait = s.verifyTicks
+    }
+
+    /** Items the client had in [snapshot] that the server's inventory does not. */
+    private fun countGhosts(player: ClientPlayerEntity): Int {
+        val handler = player.playerScreenHandler
+        val now = handler.slots.map { it.stack } + handler.cursorStack
+        var count = 0
+        for (i in snapshot.indices) {
+            val before = snapshot[i]
+            val after = now.getOrNull(i) ?: continue
+            if (before.isEmpty) continue
+            count += when {
+                !ItemStack.areItemsAndComponentsEqual(before, after) -> before.count
+                after.count < before.count -> before.count - after.count
+                else -> 0
+            }
+        }
+        snapshot = emptyList()
+        return count
+    }
+
+    private fun finish(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
+        if (s.dropSurplus) dropSurplus(player, manager)
+        // The ghost check's resync wiped the ghost copy; put it back so it stays.
+        if (s.ghostClicks && s.ghostCheck) addGhostCopy(player)
+        phase = Phase.IDLE
+
+        val parts = mutableListOf<String>()
+        if (s.ghostCheck) parts += if (ghosts > 0) "$ghosts ghost item(s) found" else "no ghost items"
+        if (s.dropSurplus) parts += if (dropped > 0) "dropped $dropped extra" else "no extra items"
+        val summary = if (parts.isEmpty()) "" else ": " + parts.joinToString(", ")
+        player.sendMessage(Text.literal("[SlotCycler] Done$summary"), true)
     }
 
     private fun watchedCount(player: ClientPlayerEntity): Int =
-        player.inventory.getStack(WATCHED_HOTBAR_INDEX).count
+        player.inventory.getStack(s.slotA - 1).count
 }
