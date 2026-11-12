@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "hoplitedupe",
+  "version": "${version}",
+  "name": "Hoplite Dupe Mod",
+  "description": "Duplicates Slot 1 to Slot 2 on Hoplite.gg",
+  "authors": ["You"],
+  "entrypoints": {
+    "client": ["hoplitedupe.HopliteDupeMod"]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1"
+  }
+}
