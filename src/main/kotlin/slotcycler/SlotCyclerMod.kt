@@ -41,6 +41,8 @@ class SlotCyclerMod : ClientModInitializer {
 
         /** Set by the settings screen's "Run" button; consumed next tick. */
         var runRequested = false
+        /** Set by the settings screen's "Clear ghosts" button; consumed next tick. */
+        var clearRequested = false
     }
 
     private enum class Phase { IDLE, CLICKING, SETTLING, VERIFYING }
@@ -63,6 +65,8 @@ class SlotCyclerMod : ClientModInitializer {
     private var ghosts = 0
     /** The client's view of every slot (cursor last) taken just before a ghost check. */
     private var snapshot: List<ItemStack> = emptyList()
+    /** The ghost copy being kept on screen: inventory index and what to show there. */
+    private var keptGhost: Pair<Int, ItemStack>? = null
 
     override fun onInitializeClient() {
         KeyBindingHelper.registerKeyBinding(cycleKey)
@@ -79,6 +83,7 @@ class SlotCyclerMod : ClientModInitializer {
         while (configKey.wasPressed()) openConfig = true
 
         if (phase == Phase.IDLE) {
+            maintainGhost(client.player)
             if (openConfig && client.currentScreen == null) client.setScreen(ConfigScreen())
             else if (pressed) start(client)
             return
@@ -111,6 +116,32 @@ class SlotCyclerMod : ClientModInitializer {
         }
     }
 
+    /**
+     * While idle, keep the ghost copy on screen: the server empties its slot
+     * whenever it resyncs (for example after the ghost is clicked), so put it
+     * back. Stop once a real item takes the slot or the player leaves.
+     */
+    private fun maintainGhost(player: ClientPlayerEntity?) {
+        val clear = clearRequested
+        clearRequested = false
+        val (index, stack) = keptGhost ?: return
+        if (player == null) {
+            keptGhost = null
+            return
+        }
+        if (clear || !Settings.current.keepGhost) {
+            keptGhost = null
+            // Only the ghost itself is removed; a real item in the slot is left alone.
+            if (player.currentScreenHandler === player.playerScreenHandler) requestResync(player)
+            return
+        }
+        val shown = player.inventory.getStack(index)
+        when {
+            shown.isEmpty -> player.inventory.setStack(index, stack.copy())
+            !ItemStack.areItemsAndComponentsEqual(shown, stack) -> keptGhost = null
+        }
+    }
+
     private fun start(client: MinecraftClient) {
         val player = client.player ?: return
         if (player.currentScreenHandler !== player.playerScreenHandler) return
@@ -136,6 +167,7 @@ class SlotCyclerMod : ClientModInitializer {
         startCount = count
         dropped = 0
         ghosts = 0
+        keptGhost = null
         phase = Phase.CLICKING
     }
 
@@ -182,7 +214,9 @@ class SlotCyclerMod : ClientModInitializer {
         val (from, to) = if (inventory.getStack(a).isEmpty) b to a else a to b
         val source = inventory.getStack(from)
         if (source.isEmpty) return
-        inventory.setStack(to, source.copyWithCount(1))
+        val copy = source.copyWithCount(1)
+        inventory.setStack(to, copy)
+        keptGhost = if (s.keepGhost) to to copy.copy() else null
     }
 
     /**
@@ -205,13 +239,21 @@ class SlotCyclerMod : ClientModInitializer {
     }
 
     /**
-     * Remember what the client believes, then send a do-nothing click carrying
-     * a deliberately wrong revision number. The server answers a revision
-     * mismatch by resending the whole inventory, which overwrites any ghosts.
+     * Remember what the client believes, then ask the server for the truth.
+     * [requestResync] sends a do-nothing click carrying a deliberately wrong
+     * revision number; the server answers a revision mismatch by resending the
+     * whole inventory, which overwrites any ghosts.
      */
     private fun beginGhostCheck(player: ClientPlayerEntity) {
         val handler = player.playerScreenHandler
         snapshot = handler.slots.map { it.stack.copy() } + handler.cursorStack.copy()
+        requestResync(player)
+        phase = Phase.VERIFYING
+        wait = s.verifyTicks
+    }
+
+    private fun requestResync(player: ClientPlayerEntity) {
+        val handler = player.playerScreenHandler
         player.networkHandler.sendPacket(
             ClickSlotC2SPacket(
                 handler.syncId, (handler.revision + 1) and 0x7FFF, NO_OP_SLOT,
@@ -219,8 +261,6 @@ class SlotCyclerMod : ClientModInitializer {
                 Int2ObjectMaps.emptyMap(), ItemStackHash.EMPTY
             )
         )
-        phase = Phase.VERIFYING
-        wait = s.verifyTicks
     }
 
     /** Items the client had in [snapshot] that the server's inventory does not. */

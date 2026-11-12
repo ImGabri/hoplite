@@ -15,6 +15,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 | **Keybinds** | `X` runs the cycle, `Right Shift` opens settings (both rebindable in Controls) |
 | **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
 | **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them, ending with a ghost copy so the item shows in both slots |
+| **Keep ghost visible** | The ghost copy is redrawn whenever the server clears it, until you press Clear ghosts |
 | **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
 | **Surplus drop** | If slot A ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
 | **Safe** | Runs on the client thread, ignores key presses mid-run, and cancels if you open a container or leave the world |
@@ -99,8 +100,11 @@ per tick. With **Finish in slot B** on, it does one extra move so the stack ends
 - **Ghost clicks** run the same clicks through the local inventory only. No packet is
   sent, so the client and server disagree about where the stack is. The run then ends by
   putting a single client-only copy of the item in whichever of the two slots is empty,
-  so the item shows in both. The copy is put back after a ghost check, so it stays in
-  your inventory until the server next updates that slot.
+  so the item shows in both.
+- **Keep ghost visible** redraws that copy whenever the server clears it (after a ghost
+  check, or when you click it), until a real item takes the slot, you start a new run,
+  or you press **Clear ghosts** in the settings screen. The copy is display-only: the
+  server never has it, so it cannot be used.
 - **Ghost check** takes a snapshot of what the client believes, then sends a click that
   does nothing but carries a wrong revision number. The server responds to that mismatch
   by resending the whole inventory. Anything in the snapshot that is missing afterwards

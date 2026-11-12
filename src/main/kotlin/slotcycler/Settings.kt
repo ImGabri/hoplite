@@ -26,6 +26,8 @@ class Settings {
      * finish with a single ghost copy so the item shows in both slots.
      */
     var ghostClicks = false
+    /** Redraw the ghost copy whenever the server clears it, until told to stop. */
+    var keepGhost = true
     /** After the run, ask the server for the real inventory and count ghost items. */
     var ghostCheck = true
     /** Drop anything in slot A beyond what it started with. */
