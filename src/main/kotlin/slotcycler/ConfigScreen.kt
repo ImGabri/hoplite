@@ -97,6 +97,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             y += ROW_PITCH
         }
         toggle("Ghost clicks (copy in both)", { s.ghostClicks }, { s.ghostClicks = it })
+        toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
         toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
@@ -105,6 +106,9 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         addDrawableChild(FancyButton(left, by, 70, "Reset", false) {
             Settings.reset()
             clearAndInit()
+        })
+        addDrawableChild(FancyButton(left + 76, by, 84, "Clear ghosts", false) {
+            SlotCyclerMod.clearRequested = true
         })
         addDrawableChild(FancyButton(px + PANEL_W - 12 - 70, by, 70, "Done", false) { close() })
         addDrawableChild(FancyButton(px + PANEL_W - 12 - 70 - 6 - 110, by, 110, "Save & Run", true) {
@@ -201,12 +205,12 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
     /** A miniature hotbar showing the configured run in slow motion, plus totals. */
     private fun drawPreview(context: DrawContext) {
         val boxX = px + PANEL_W - 12 - COL_W
-        val boxY = py + 132
-        context.roundRect(boxX, boxY, boxX + COL_W, boxY + 64, TRACK)
+        val boxY = py + 152
+        context.roundRect(boxX, boxY, boxX + COL_W, boxY + 44, TRACK)
 
         val slot = 18
         val barX = boxX + (COL_W - slot * 9) / 2
-        val barY = boxY + 16
+        val barY = boxY + 12
         for (i in 0 until 9) {
             val x = barX + i * slot
             val accent = when (i + 1) {
@@ -216,17 +220,17 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             }
             context.fill(x + 1, barY + 1, x + slot - 1, barY + slot - 1, 0xFF10121C.toInt())
             context.drawStrokedRectangle(x + 1, barY + 1, slot - 2, slot - 2, accent)
-            context.drawCenteredTextWithShadow(textRenderer, "${i + 1}", x + slot / 2, barY - 10,
+            context.drawCenteredTextWithShadow(textRenderer, "${i + 1}", x + slot / 2, barY - 9,
                 if (accent == 0xFF2C3148.toInt()) TEXT_DIM else accent)
         }
 
         if (s.slotA == s.slotB) {
             context.drawCenteredTextWithShadow(textRenderer, "Slot A and B must differ",
-                boxX + COL_W / 2, boxY + 40, WARN)
+                boxX + COL_W / 2, boxY + 33, WARN)
             return
         }
 
-        // Replay the click schedule: where is the stack after `step` clicks?
+        // Replay the click schedule in slow motion: where is the stack after `step` clicks?
         val total = s.totalClicks()
         val runTicks = s.clickTicks()
         val loop = runTicks + 6
@@ -251,16 +255,12 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         }
 
         val ms = runTicks * MS_PER_TICK
-        context.drawTextWithShadow(textRenderer, "$total clicks", boxX + 6, boxY + 40, TEXT)
+        val mode = if (s.ghostClicks) "ghost" else "real"
+        context.drawTextWithShadow(textRenderer, "$total $mode clicks", boxX + 6, boxY + 33,
+            if (s.ghostClicks) ACCENT_B else OK)
         val time = "$runTicks ticks (${ms / 1000}.${(ms % 1000) / 100}s)"
         context.drawTextWithShadow(textRenderer, time, boxX + COL_W - 6 - textRenderer.getWidth(time),
-            boxY + 40, TEXT)
-        val mode = if (s.ghostClicks) "ghost clicks" else "real clicks"
-        context.drawTextWithShadow(textRenderer, mode, boxX + 6, boxY + 51,
-            if (s.ghostClicks) ACCENT_B else OK)
-        val note = "preview 1/${PREVIEW_SLOWDOWN} speed"
-        context.drawTextWithShadow(textRenderer, note, boxX + COL_W - 6 - textRenderer.getWidth(note),
-            boxY + 51, TEXT_DIM)
+            boxY + 33, TEXT)
     }
 
     // ---------------------------------------------------------------- widgets
