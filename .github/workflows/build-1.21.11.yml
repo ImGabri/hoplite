@@ -1,4 +1,4 @@
-name: Build Slot Cycler (Minecraft 1.21.11)
+name: Build and Release Slot Cycler (Minecraft 1.21.11)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -26,9 +26,28 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon clean build
-      - name: Upload playable JAR
+      - name: Verify compiled JAR
+        run: |
+          test -s build/libs/slotcycler-1.0.0.jar
+          unzip -p build/libs/slotcycler-1.0.0.jar fabric.mod.json | grep -q 'slotcycler'
+          sha256sum build/libs/slotcycler-1.0.0.jar
+      - name: Upload playable JAR as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: slotcycler-minecraft-1.21.11
           path: build/libs/slotcycler-1.0.0.jar
           if-no-files-found: error
+      - name: Publish GitHub Release with JAR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="slotcycler-v1.0.0-mc1.21.11"
+          JAR="build/libs/slotcycler-1.0.0.jar"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$JAR" --clobber
+          else
+            gh release create "$TAG" "$JAR" \
+              --target "$GITHUB_SHA" \
+              --title "Slot Cycler v1.0.0 (Minecraft 1.21.11)" \
+              --notes "Fabric client mod for Minecraft 1.21.11. Requires Fabric Loader, Fabric API, and Fabric Language Kotlin. Download the slotcycler-1.0.0.jar file and put it into your mods folder."
+          fi
