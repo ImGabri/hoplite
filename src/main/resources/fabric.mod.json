@@ -2,9 +2,14 @@
   "schemaVersion": 1,
   "id": "hoplitedupe",
   "version": "${version}",
-  "name": "Hoplite Dupe Mod",
-  "description": "Duplicates Slot 1 to Slot 2 on Hoplite.gg",
-  "authors": ["You"],
+  "name": "Hoplite Dupe",
+  "description": "Client-side utility for Hoplite.gg — press X to cycle hotbar slots 1 & 2.",
+  "authors": ["ImGabri"],
+  "contact": {
+    "homepage": "https://github.com/ImGabri/hoplite",
+    "issues": "https://github.com/ImGabri/hoplite/issues",
+    "sources": "https://github.com/ImGabri/hoplite"
+  },
   "entrypoints": {
     "client": ["hoplitedupe.HopliteDupeMod"]
   },
@@ -12,6 +17,7 @@
   "depends": {
     "fabricloader": ">=0.15.11",
     "fabric-api": "*",
-    "minecraft": "~1.21.1"
+    "minecraft": "~1.21.1",
+    "java": ">=17"
   }
 }
