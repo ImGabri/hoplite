@@ -3,7 +3,7 @@
   "id": "slotcycler",
   "version": "${version}",
   "name": "Slot Cycler",
-  "description": "Client-side utility: cycle an item between two hotbar slots, check for ghost items and drop surplus. X to run, Right Shift for settings.",
+  "description": "Client-side utility for vanilla-compatible servers: cycle items, show a display-only copy, check for ghosts and drop surplus. No server installation needed.",
   "environment": "client",
   "authors": ["ImGabri"],
   "contact": {
@@ -12,7 +12,6 @@
     "sources": "https://github.com/ImGabri/slotcycler"
   },
   "entrypoints": {
-    "main": ["slotcycler.SlotCyclerServer"],
     "client": ["slotcycler.SlotCyclerMod"]
   },
   "mixins": [],

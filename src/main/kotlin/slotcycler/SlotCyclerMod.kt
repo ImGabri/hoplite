@@ -4,7 +4,6 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMaps
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.network.ClientPlayerInteractionManager
@@ -22,14 +21,14 @@ import org.lwjgl.glfw.GLFW
  * Slot Cycler.
  *
  * Press the run key to move the stack in hotbar slot A to slot B and back.
- * When the server runs this mod too, a ghost run can end with a real copy of
- * the item that exists on both sides (see [SlotCyclerServer]).
+ * A ghost run can end with a display-only copy of the item in both slots.
  * Afterwards the mod can ask the server for the real inventory to count ghost
  * items (items the client shows but the server does not have), and drop
  * anything slot A holds beyond what it started with.
  *
  * Everything is driven by [Settings] and runs on the client thread as a small
- * tick state machine.
+ * tick state machine. No Slot Cycler code or custom packet receiver is needed
+ * on the server.
  */
 class SlotCyclerMod : ClientModInitializer {
 
@@ -66,8 +65,6 @@ class SlotCyclerMod : ClientModInitializer {
     private var startCount = 0
     private var dropped = 0
     private var ghosts = 0
-    /** This run's copy is made by the server, so it is a real item on both sides. */
-    private var realCopy = false
     /** The client's view of every slot (cursor last) taken just before a ghost check. */
     private var snapshot: List<ItemStack> = emptyList()
     /** The ghost copy being kept on screen: inventory index and what to show there. */
@@ -173,8 +170,6 @@ class SlotCyclerMod : ClientModInitializer {
         dropped = 0
         ghosts = 0
         keptGhost = null
-        // Only a server that also runs this mod can make the copy real.
-        realCopy = s.ghostClicks && s.realCopy && ClientPlayNetworking.canSend(MakeRealPayload.ID)
         phase = Phase.CLICKING
     }
 
@@ -202,12 +197,7 @@ class SlotCyclerMod : ClientModInitializer {
         }
 
         if (step >= totalSteps) {
-            if (realCopy) {
-                // The server adds the copy and resends the inventory, ghost clicks undone.
-                ClientPlayNetworking.send(MakeRealPayload(s.slotA - 1, s.slotB - 1))
-            } else if (s.ghostClicks) {
-                addGhostCopy(player)
-            }
+            if (s.ghostClicks) addGhostCopy(player)
             phase = Phase.SETTLING
             wait = s.settleTicks
         } else {
@@ -297,14 +287,11 @@ class SlotCyclerMod : ClientModInitializer {
     private fun finish(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
         if (s.dropSurplus) dropSurplus(player, manager)
         // The ghost check's resync wiped the ghost copy; put it back so it stays.
-        if (s.ghostClicks && s.ghostCheck && !realCopy) addGhostCopy(player)
+        if (s.ghostClicks && s.ghostCheck) addGhostCopy(player)
         phase = Phase.IDLE
 
         val parts = mutableListOf<String>()
         if (s.ghostCheck) parts += if (ghosts > 0) "$ghosts ghost item(s) found" else "no ghost items"
-        if (s.ghostClicks && s.realCopy) {
-            parts += if (realCopy) "real copy requested" else "server has no Slot Cycler, copy is display-only"
-        }
         if (s.dropSurplus) parts += if (dropped > 0) "dropped $dropped extra" else "no extra items"
         val summary = if (parts.isEmpty()) "" else ": " + parts.joinToString(", ")
         player.sendMessage(Text.literal("[SlotCycler] Done$summary"), true)

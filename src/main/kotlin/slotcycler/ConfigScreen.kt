@@ -96,9 +96,8 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             addDrawableChild(FancyToggle(right, y, label, get, set))
             y += ROW_PITCH
         }
-        toggle("Ghost clicks (copy in both)", { s.ghostClicks }, { s.ghostClicks = it })
+        toggle("Ghost clicks (display copy)", { s.ghostClicks }, { s.ghostClicks = it })
         toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
-        toggle("Real copy (server mod)", { s.realCopy }, { s.realCopy = it })
         toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
