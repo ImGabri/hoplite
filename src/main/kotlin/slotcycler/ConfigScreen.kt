@@ -13,21 +13,18 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import net.minecraft.util.Util
-import slotcycler.Ui.OPAQUE
 import slotcycler.Ui.TRACK
-import slotcycler.Ui.TRACK_HOVER
 import slotcycler.Ui.TEXT
 import slotcycler.Ui.TEXT_DIM
 import slotcycler.Ui.ACCENT_A
 import slotcycler.Ui.ACCENT_B
-import slotcycler.Ui.ACCENT_MID
 import slotcycler.Ui.EDGE
 import slotcycler.Ui.WHITE
 import slotcycler.Ui.WARN
 import slotcycler.Ui.OK
-import slotcycler.Ui.TITLE
+import slotcycler.Ui.pill
+import slotcycler.Ui.title
 import slotcycler.Ui.lerpColor
-import slotcycler.Ui.alpha
 import slotcycler.Ui.ease
 import slotcycler.Ui.pretty
 import slotcycler.Ui.sweep
@@ -37,7 +34,6 @@ import slotcycler.Ui.shifted
 import slotcycler.Ui.slide
 import slotcycler.Ui.roundRect
 import slotcycler.Ui.row
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Slot Cycler")) {
@@ -107,15 +103,15 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
             { s.endInB }, { s.endInB = it })
 
         val by = py + PANEL_H - 20
-        addDrawableChild(FancyButton(left, by, 70, "Reset", false) {
+        addDrawableChild(Ui.Button(left, by, 70, 16, "Reset", false) {
             Settings.reset()
             clearAndInit()
         })
-        addDrawableChild(FancyButton(left + 76, by, 84, "Clear ghosts", false) {
+        addDrawableChild(Ui.Button(left + 76, by, 84, 16, "Clear ghosts", false) {
             SlotCyclerMod.clearRequested = true
         })
-        addDrawableChild(FancyButton(px + PANEL_W - 12 - 70, by, 70, "Done", false) { close() })
-        addDrawableChild(FancyButton(px + PANEL_W - 12 - 70 - 6 - 110, by, 110, "Save & Run", true) {
+        addDrawableChild(Ui.Button(px + PANEL_W - 12 - 70, by, 70, 16, "Done", false) { close() })
+        addDrawableChild(Ui.Button(px + PANEL_W - 12 - 70 - 6 - 110, by, 110, 16, "Save & Run", true) {
             s.save()
             client?.setScreen(null)
             SlotCyclerMod.runRequested = true
@@ -131,7 +127,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val fade = (seconds() / 0.2f).coerceIn(0f, 1f)
-        context.backdrop(width, height, fade)
+        context.backdrop(width, height, fade, seconds())
         context.shifted(slide(fade)) { drawPanel(context, fade) }
     }
 
@@ -139,7 +135,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
         context.panel(px, py, PANEL_W, PANEL_H, fade, seconds())
 
         val mid = px + PANEL_W / 2
-        context.drawCenteredTextWithShadow(textRenderer, TITLE, mid, py + 10, TEXT)
+        context.title(mid, py + 10, seconds())
         val ghost = s.ghostClicks
         val line = if (ghost) "Ghost mode \u00B7 client-side, display-only" else "Real mode \u00B7 server-authoritative"
         val lineX = mid - textRenderer.getWidth(line) / 2
@@ -322,40 +318,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
             context.drawTextWithShadow(textRenderer, label, x + 6, y + 5,
                 lerpColor(maxOf(glow, anim * 0.6f), TEXT_DIM, TEXT))
 
-            val pillW = 24
-            val pillX = x + width - 5 - pillW
-            val pillY = y + 4
-            context.roundRect(pillX, pillY, pillX + pillW, pillY + 10, lerpColor(anim, 0xFF30344A.toInt(), ACCENT_MID))
-            val knobX = pillX + 2 + ((pillW - 12) * anim).roundToInt()
-            context.roundRect(knobX, pillY + 1, knobX + 8, pillY + 9, WHITE)
-        }
-
-        override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
-            appendDefaultNarrations(builder)
-        }
-    }
-
-    private inner class FancyButton(
-        x: Int, y: Int, w: Int, private val label: String,
-        private val primary: Boolean, private val action: () -> Unit
-    ) : ClickableWidget(x, y, w, 16, Text.literal(label)) {
-
-        private var glow = 0f
-
-        override fun onClick(click: Click, doubled: Boolean) = action()
-
-        override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-            glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
-            if (primary) {
-                val dim = 0.3f * (1f - glow)
-                context.sweep(x + 1, y, x + width - 1, y + height,
-                    lerpColor(dim, ACCENT_A, OPAQUE), lerpColor(dim, ACCENT_B, OPAQUE))
-            } else {
-                context.roundRect(x, y, x + width, y + height, lerpColor(glow, TRACK, TRACK_HOVER))
-                if (glow > 0f) context.drawStrokedRectangle(x, y, width, height, alpha(ACCENT_MID, (255 * glow).toInt()))
-            }
-            context.drawCenteredTextWithShadow(textRenderer, label, x + width / 2, y + 4,
-                if (primary) WHITE else lerpColor(glow, TEXT, WHITE))
+            context.pill(x + width - 29, y + 4, anim)
         }
 
         override fun appendClickableNarrations(builder: NarrationMessageBuilder) {

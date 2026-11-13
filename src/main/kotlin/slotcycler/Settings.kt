@@ -32,8 +32,24 @@ class Settings {
     var durabilityAlert = true
     var fullbright = false
     var deathCoords = true
+    var lowHealth = true
+    var zoom = true
+    var posInfo: Pos? = null
+    var posEffects: Pos? = null
+    var posArmor: Pos? = null
+    var posTracker: Pos? = null
     var fpsBoost = false
+    var menuFx = true
     var savedVideo: SavedVideo? = null
+
+    class Pos(var x: Float = 0f, var y: Float = 0f)
+
+    fun resetHud() {
+        posInfo = Pos(0f, 0f)
+        posEffects = Pos(0f, 0.09f)
+        posArmor = Pos(1f, 1f)
+        posTracker = Pos(1f, 0.5f)
+    }
 
     class SavedVideo {
         var preset: String? = null
@@ -59,6 +75,11 @@ class Settings {
         verifyTicks = verifyTicks.coerceIn(2, MAX_WAIT)
         if (itemMode !in ITEM_MODES) itemMode = ANY_ITEM
         if (trackedItems == null) trackedItems = DEFAULT_TRACKED
+        if (posInfo == null || posEffects == null || posArmor == null || posTracker == null) resetHud()
+        for (p in listOfNotNull(posInfo, posEffects, posArmor, posTracker)) {
+            p.x = if (p.x.isFinite()) p.x.coerceIn(0f, 1f) else 0f
+            p.y = if (p.y.isFinite()) p.y.coerceIn(0f, 1f) else 0f
+        }
     }
 
     fun itemModeIndex(): Int = ITEM_MODES.indexOf(itemMode).coerceAtLeast(0)
@@ -102,7 +123,7 @@ class Settings {
 
         private fun load(): Settings =
             runCatching { gson.fromJson(Files.readString(path), Settings::class.java) }
-                .getOrNull()?.also { it.clamp() } ?: Settings()
+                .getOrNull()?.also { it.clamp() } ?: Settings().also { it.clamp() }
 
         fun reset() {
             val old = current
@@ -117,9 +138,17 @@ class Settings {
                 durabilityAlert = old.durabilityAlert
                 fullbright = old.fullbright
                 deathCoords = old.deathCoords
+                lowHealth = old.lowHealth
+                zoom = old.zoom
+                posInfo = old.posInfo
+                posEffects = old.posEffects
+                posArmor = old.posArmor
+                posTracker = old.posTracker
                 fpsBoost = old.fpsBoost
+                menuFx = old.menuFx
                 savedVideo = old.savedVideo
             }
+            current.clamp()
             current.save()
         }
     }

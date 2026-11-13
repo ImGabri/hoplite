@@ -35,6 +35,7 @@ class SlotCyclerMod : ClientModInitializer {
 
         var runRequested = false
         var clearRequested = false
+        var menuKey: KeyBinding? = null
 
         const val CYAN = 0x35E0FF
         private const val VIOLET = 0xB65CFF
@@ -84,6 +85,9 @@ class SlotCyclerMod : ClientModInitializer {
     private val configKey =
         KeyBinding("key.$MOD_ID.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, category)
 
+    private val zoomKey =
+        KeyBinding("key.$MOD_ID.zoom", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_C, category)
+
     private var phase = Phase.IDLE
     private var s = Settings.current
     private var sequence = IntArray(4)
@@ -102,11 +106,14 @@ class SlotCyclerMod : ClientModInitializer {
     override fun onInitializeClient() {
         KeyBindingHelper.registerKeyBinding(cycleKey)
         KeyBindingHelper.registerKeyBinding(configKey)
+        KeyBindingHelper.registerKeyBinding(zoomKey)
+        menuKey = configKey
         ClientTickEvents.END_CLIENT_TICK.register(::onTick)
         Qol.init()
     }
 
     private fun onTick(client: MinecraftClient) {
+        Qol.zoom(client, zoomKey.isPressed)
         var pressed = runRequested
         runRequested = false
         while (cycleKey.wasPressed()) pressed = true

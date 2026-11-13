@@ -15,6 +15,7 @@ import net.minecraft.entity.effect.StatusEffectInstance
 import net.minecraft.entity.effect.StatusEffects
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.item.Items
 import net.minecraft.network.packet.c2s.play.SelectMerchantTradeC2SPacket
 import net.minecraft.registry.Registries
 import net.minecraft.screen.GenericContainerScreenHandler
@@ -25,13 +26,16 @@ import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.sound.SoundEvents
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
+import net.minecraft.util.Util
 import slotcycler.Ui.AMBER
 import slotcycler.Ui.CHIP_BG
 import slotcycler.Ui.OK
 import slotcycler.Ui.TEXT
-import slotcycler.Ui.TEXT_DIM
 import slotcycler.Ui.WARN
+import slotcycler.Ui.alpha
 import slotcycler.Ui.roundRect
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 object Qol {
     private const val CLICKS_PER_TICK = 4
@@ -42,7 +46,25 @@ object Qol {
     private const val LOW = 0.10f
     private const val MID = 0.35f
 
-    private class Line(val icon: ItemStack, val text: String, val color: Int, val width: Int)
+    private const val ZOOM_FOV = 30
+    private const val LOW_HEALTH = 6f
+    private const val TRADE_LABEL = "Trade max"
+
+    class Line(val icon: ItemStack, val text: String, val color: Int, val width: Int)
+
+    enum class Kind(val label: String) {
+        INFO("Info line"), EFFECTS("Effect timers"), ARMOR("Armour"), TRACKER("Item tracker")
+    }
+
+    class Box(val kind: Kind) {
+        var lines: List<Line> = emptyList()
+        var x = 0
+        var y = 0
+        var w = 0
+        var h = 0
+    }
+
+    val boxes = Kind.entries.map { Box(it) }
 
     private val gear = arrayOf(
         EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET,
@@ -58,8 +80,11 @@ object Qol {
     private var wasDead = false
     private var bright = false
 
-    private var infoLine = ""
-    private var infoWidth = 0
+    private var zooming = false
+    private var zoomFov = 70
+    private var zoomSmooth = false
+    private var tradeLabel = TRADE_LABEL
+    private var infoLines: List<Line> = emptyList()
     private var armorLines: List<Line> = emptyList()
     private var trackerLines: List<Line> = emptyList()
     private var effectLines: List<Line> = emptyList()
@@ -84,7 +109,10 @@ object Qol {
         age++
         fullbright(player)
         deathCoords(player)
-        if (age % 4 == 0) refreshHud(client, player)
+        if (age % 4 == 0) {
+            refreshHud(client, player)
+            refreshTrade(player)
+        }
         if (age % 20 == 0 && s.durabilityAlert) durabilityAlert(player)
         runClicks(client, player)
         runTrades(client, player)
@@ -94,8 +122,10 @@ object Qol {
         val current = player.getStatusEffect(StatusEffects.NIGHT_VISION)
         val ours = current != null && current.isAmbient && !current.shouldShowIcon()
         if (s.fullbright) {
-            if (current == null || (ours && current.duration < 300)) {
-                player.addStatusEffect(StatusEffectInstance(StatusEffects.NIGHT_VISION, 600, 0, true, false, false))
+            if (current == null || (ours && !current.isInfinite)) {
+                player.addStatusEffect(
+                    StatusEffectInstance(StatusEffects.NIGHT_VISION, StatusEffectInstance.INFINITE, 0, true, false, false)
+                )
                 bright = true
             }
         } else if (bright) {
@@ -141,9 +171,9 @@ object Qol {
             val pos = player.blockPos
             val ping = client.networkHandler?.getPlayerListEntry(player.uuid)?.latency ?: 0
             val facing = player.horizontalFacing.name.first()
-            infoLine = "${pos.x} ${pos.y} ${pos.z}  ·  $facing  ·  $ping ms  ·  ${client.currentFps} fps"
-            infoWidth = font.getWidth(infoLine)
-        }
+            infoLines = listOf(line(ItemStack.EMPTY,
+                "${pos.x} ${pos.y} ${pos.z}  ·  $facing  ·  $ping ms  ·  ${client.currentFps} fps", TEXT))
+        } else infoLines = emptyList()
 
         armorLines = if (!s.armorHud) emptyList() else gear.mapNotNull { slot ->
             val stack = player.getEquippedStack(slot)
@@ -189,45 +219,149 @@ object Qol {
             }
     }
 
+    fun position(kind: Kind): Settings.Pos = when (kind) {
+        Kind.INFO -> s.posInfo
+        Kind.EFFECTS -> s.posEffects
+        Kind.ARMOR -> s.posArmor
+        Kind.TRACKER -> s.posTracker
+    } ?: Settings.Pos()
+
+    fun sample(kind: Kind): List<Line> {
+        val font = MinecraftClient.getInstance().textRenderer
+        fun line(icon: ItemStack, text: String, color: Int) = Line(icon, text, color, font.getWidth(text))
+        return when (kind) {
+            Kind.INFO -> listOf(line(ItemStack.EMPTY, "128 64 -30  ·  N  ·  45 ms  ·  144 fps", TEXT))
+            Kind.EFFECTS -> listOf(line(ItemStack.EMPTY, "Speed 2  1:15", OK), line(ItemStack.EMPTY, "Poison  0:16", WARN))
+            Kind.ARMOR -> listOf(
+                line(ItemStack(Items.IRON_HELMET), "15", WARN),
+                line(ItemStack(Items.DIAMOND_CHESTPLATE), "228", TEXT),
+                line(ItemStack(Items.DIAMOND_SWORD), "512", AMBER)
+            )
+            Kind.TRACKER -> listOf(
+                line(ItemStack(Items.NETHERITE_SCRAP), "23", TEXT),
+                line(ItemStack(Items.TOTEM_OF_UNDYING), "1", TEXT),
+                line(ItemStack(Items.GOLDEN_APPLE), "5", TEXT)
+            )
+        }
+    }
+
+    fun layout(box: Box, lines: List<Line>, width: Int, height: Int) {
+        box.lines = lines
+        val widest = lines.maxOfOrNull { it.width } ?: 0
+        when (box.kind) {
+            Kind.INFO -> { box.w = widest + 8; box.h = 14 }
+            Kind.EFFECTS -> { box.w = widest + 11; box.h = lines.size * 13 - 1 }
+            else -> { box.w = widest + 26; box.h = lines.size * 18 + 2 }
+        }
+        val pos = position(box.kind)
+        box.x = 4 + (pos.x * (width - 8 - box.w)).roundToInt()
+        box.y = 4 + (pos.y * (height - 8 - box.h)).roundToInt()
+    }
+
+    fun draw(context: DrawContext, box: Box) {
+        val font = MinecraftClient.getInstance().textRenderer
+        val x = box.x
+        var y = box.y
+        when (box.kind) {
+            Kind.INFO -> {
+                context.roundRect(x, y, x + box.w, y + box.h, CHIP_BG)
+                context.drawTextWithShadow(font, box.lines[0].text, x + 4, y + 3, TEXT)
+            }
+            Kind.EFFECTS -> for (line in box.lines) {
+                context.roundRect(x, y, x + line.width + 11, y + 12, CHIP_BG)
+                context.fill(x, y + 1, x + 2, y + 11, line.color)
+                context.drawTextWithShadow(font, line.text, x + 6, y + 2, TEXT)
+                y += 13
+            }
+            else -> {
+                context.roundRect(x, y, x + box.w, y + box.h, CHIP_BG)
+                y += 1
+                for (line in box.lines) {
+                    context.drawItem(line.icon, x + 2, y)
+                    context.drawTextWithShadow(font, line.text, x + box.w - 4 - line.width, y + 4, line.color)
+                    y += 18
+                }
+            }
+        }
+    }
+
     private fun renderHud(context: DrawContext, counter: RenderTickCounter) {
         val client = MinecraftClient.getInstance()
-        if (client.player == null || client.options.hudHidden) return
-        val font = client.textRenderer
+        val player = client.player ?: return
+        if (client.options.hudHidden || client.currentScreen is HudEditScreen) return
         val debug = client.debugHud.shouldShowDebugHud()
+        val w = context.scaledWindowWidth
+        val h = context.scaledWindowHeight
 
-        var y = 4
-        if (s.infoHud && !debug && infoLine.isNotEmpty()) {
-            context.roundRect(4, y, 4 + infoWidth + 8, y + 14, CHIP_BG)
-            context.drawTextWithShadow(font, infoLine, 8, y + 3, TEXT)
-            y += 17
-        }
-        if (!debug) {
-            for (line in effectLines) {
-                context.roundRect(4, y, 4 + line.width + 11, y + 12, CHIP_BG)
-                context.fill(4, y + 1, 6, y + 11, line.color)
-                context.drawTextWithShadow(font, line.text, 10, y + 2, TEXT)
-                y += 13
+        if (s.lowHealth && player.isAlive && player.health <= LOW_HEALTH && !player.isCreative && !player.isSpectator) {
+            val pulse = (sin(Util.getMeasuringTimeMs() / 160.0) + 1.0) / 2.0
+            val a = (0x30 + 0x40 * pulse).toInt()
+            context.fillGradient(0, 0, w, 28, alpha(WARN, a), alpha(WARN, 0))
+            context.fillGradient(0, h - 28, w, h, alpha(WARN, 0), alpha(WARN, a))
+            for (i in 0 until 6) {
+                val step = alpha(WARN, a * (6 - i) / 6)
+                context.fill(i * 4, 0, i * 4 + 4, h, step)
+                context.fill(w - i * 4 - 4, 0, w - i * 4, h, step)
             }
         }
 
-        val w = context.scaledWindowWidth
-        val h = context.scaledWindowHeight
-        column(context, armorLines, w, h - 4 - armorLines.size * 18)
-        column(context, trackerLines, w, (h - trackerLines.size * 18) / 2)
+        for (box in boxes) {
+            val lines = when (box.kind) {
+                Kind.INFO -> if (debug) emptyList() else infoLines
+                Kind.EFFECTS -> if (debug) emptyList() else effectLines
+                Kind.ARMOR -> armorLines
+                Kind.TRACKER -> trackerLines
+            }
+            if (lines.isEmpty()) continue
+            layout(box, lines, w, h)
+            draw(context, box)
+        }
     }
 
-    private fun column(context: DrawContext, lines: List<Line>, screenWidth: Int, top: Int) {
-        if (lines.isEmpty()) return
-        val font = MinecraftClient.getInstance().textRenderer
-        val widest = lines.maxOf { it.width }
-        val x = screenWidth - 4 - widest - 24
-        context.roundRect(x, top - 2, screenWidth - 4, top + lines.size * 18, CHIP_BG)
-        var y = top
-        for (line in lines) {
-            context.drawItem(line.icon, x + 2, y)
-            context.drawTextWithShadow(font, line.text, screenWidth - 8 - line.width, y + 4, line.color)
-            y += 18
+    fun zoom(client: MinecraftClient, held: Boolean) {
+        val options = client.options
+        val want = held && s.zoom && client.player != null && client.currentScreen == null
+        if (want && !zooming) {
+            zoomFov = options.fov.value
+            zoomSmooth = options.smoothCameraEnabled
+            options.fov.value = ZOOM_FOV
+            options.smoothCameraEnabled = true
+            zooming = true
+        } else if (!want && zooming) {
+            options.fov.value = zoomFov
+            options.smoothCameraEnabled = zoomSmooth
+            zooming = false
         }
+    }
+
+    private fun selected(handler: MerchantScreenHandler): Int {
+        val output = handler.getSlot(2).stack
+        if (output.isEmpty) return -1
+        return handler.recipes.indexOfFirst {
+            !it.isDisabled && ItemStack.areItemsAndComponentsEqual(it.sellItem, output) &&
+                ItemStack.areItemsEqual(it.displayedFirstBuyItem, handler.getSlot(0).stack)
+        }
+    }
+
+    private fun refreshTrade(player: ClientPlayerEntity) {
+        tradeLabel = TRADE_LABEL
+        val handler = player.currentScreenHandler as? MerchantScreenHandler ?: return
+        val index = selected(handler)
+        if (index < 0) return
+        val offer = handler.recipes[index]
+        fun affordable(price: ItemStack): Int {
+            if (price.isEmpty) return Int.MAX_VALUE
+            var have = 0
+            for (i in handler.slots.indices) {
+                if (i == 2) continue
+                val stack = handler.getSlot(i).stack
+                if (ItemStack.areItemsEqual(stack, price)) have += stack.count
+            }
+            return have / price.count
+        }
+        val rounds = minOf(affordable(offer.displayedFirstBuyItem), affordable(offer.displayedSecondBuyItem),
+            offer.maxUses - offer.uses)
+        if (rounds > 0) tradeLabel = "Trade ×$rounds"
     }
 
     private fun decorate(screen: Screen, width: Int, height: Int) {
@@ -238,7 +372,7 @@ object Qol {
             handler is MerchantScreenHandler && s.tradeMax -> {
                 val right = (width + 276) / 2
                 val top = (height - 166) / 2
-                buttons.add(Ui.Button(right - 64, top - 17, 64, 14, "Trade max", true) { startTrades(handler) })
+                buttons.add(Ui.Button(right - 64, top - 17, 64, 14, TRADE_LABEL, true, { tradeLabel }) { startTrades(handler) })
             }
             s.containerButtons && (handler is GenericContainerScreenHandler || handler is ShulkerBoxScreenHandler) -> {
                 val rows = (handler.slots.size - PLAYER_SLOTS) / 9
@@ -311,11 +445,7 @@ object Qol {
             tradeWait--
             return
         }
-        val output = handler.getSlot(2).stack
-        val index = if (output.isEmpty) -1 else handler.recipes.indexOfFirst {
-            !it.isDisabled && ItemStack.areItemsAndComponentsEqual(it.sellItem, output) &&
-                ItemStack.areItemsEqual(it.displayedFirstBuyItem, handler.getSlot(0).stack)
-        }
+        val index = selected(handler)
         if (index < 0) {
             tradesLeft = 0
             SlotCyclerMod.announce(player, "Trading finished" to SlotCyclerMod.GOOD,

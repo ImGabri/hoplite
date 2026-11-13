@@ -3,11 +3,15 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
-version = "2.5.0"
-group = "com.example.slotcycler"
+version = "3.0.0"
+group = "io.github.imgabri"
 
 base {
     archivesName.set("slotcycler")
+}
+
+repositories {
+    maven("https://maven.terraformersmc.com/releases")
 }
 
 dependencies {
@@ -16,6 +20,7 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:0.19.5")
     modImplementation("net.fabricmc.fabric-api:fabric-api:0.141.3+1.21.11")
     modImplementation("net.fabricmc:fabric-language-kotlin:1.14.2+kotlin.2.4.21")
+    modCompileOnly("com.terraformersmc:modmenu:17.0.0-beta.2")
 }
 
 tasks.processResources {

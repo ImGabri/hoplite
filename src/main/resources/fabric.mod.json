@@ -3,16 +3,23 @@
   "id": "slotcycler",
   "version": "${version}",
   "name": "Slot Cycler",
-  "description": "Client-side quality of life: trade max, container buttons, durability and item HUDs, alerts, an FPS preset, and the Slot Cycler inventory tool. No server installation needed.",
+  "description": "Client-side quality of life: trade max, container buttons, a movable HUD for durability, items and effects, alerts, zoom, an FPS preset, and the Slot Cycler inventory tool. No server installation needed.",
   "environment": "client",
-  "authors": ["ImGabri"],
+  "authors": [
+    "ImGabri"
+  ],
   "contact": {
     "homepage": "https://github.com/ImGabri/slotcycler",
     "issues": "https://github.com/ImGabri/slotcycler/issues",
     "sources": "https://github.com/ImGabri/slotcycler"
   },
   "entrypoints": {
-    "client": ["slotcycler.SlotCyclerMod"]
+    "client": [
+      "slotcycler.SlotCyclerMod"
+    ],
+    "modmenu": [
+      "slotcycler.ModMenuCompat"
+    ]
   },
   "mixins": [],
   "depends": {
@@ -25,5 +32,10 @@
   "recommends": {
     "sodium": "*",
     "lithium": "*"
+  },
+  "icon": "assets/slotcycler/icon.png",
+  "license": "MIT",
+  "suggests": {
+    "modmenu": "*"
   }
 }

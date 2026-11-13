@@ -3,6 +3,7 @@ package slotcycler
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.client.input.KeyInput
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
 import net.minecraft.text.Text
@@ -13,7 +14,7 @@ import slotcycler.Ui.OK
 import slotcycler.Ui.TEXT
 import slotcycler.Ui.TEXT_DIM
 import slotcycler.Ui.TEXT_FAINT
-import slotcycler.Ui.TITLE
+import slotcycler.Ui.title
 import slotcycler.Ui.TRACK
 import slotcycler.Ui.backdrop
 import slotcycler.Ui.panel
@@ -21,7 +22,7 @@ import slotcycler.Ui.roundRect
 import slotcycler.Ui.shifted
 import slotcycler.Ui.slide
 
-class HubScreen : Screen(Text.literal("Slot Cycler")) {
+class HubScreen(private val parent: Screen? = null) : Screen(Text.literal("Slot Cycler")) {
 
     private companion object {
         const val PANEL_W = 392
@@ -102,34 +103,51 @@ class HubScreen : Screen(Text.literal("Slot Cycler")) {
             }
             UTILITY -> {
                 option("Durability alert", "Warns below 10% durability", { s.durabilityAlert }, { s.durabilityAlert = it })
+                option("Low health warning", "Red screen edge at 3 hearts or less", { s.lowHealth }, { s.lowHealth = it })
                 option("Death coordinates", "Prints where you died in chat", { s.deathCoords }, { s.deathCoords = it })
                 option("Fullbright", "Client-side night vision", { s.fullbright }, { s.fullbright = it })
+                option("Zoom", "Hold the zoom key (C by default)", { s.zoom }, { s.zoom = it })
             }
             PERFORMANCE -> {
                 option("FPS boost preset", "Lighter particles, clouds and leaves", { s.fpsBoost }, Perf::setBoost)
+                option("Menu effects", "Particles and glow in these menus", { s.menuFx }, { s.menuFx = it })
             }
         }
 
+        if (tab == HUD) {
+            addDrawableChild(Ui.Button(px + PANEL_W - 12 - 70 - 6 - 84, py + PANEL_H - 22, 84, 16, "Edit layout", false) {
+                s.save()
+                client?.setScreen(HudEditScreen(this))
+            })
+        }
         addDrawableChild(Ui.Button(px + PANEL_W - 12 - 70, py + PANEL_H - 22, 70, 16, "Done", true) { close() })
     }
 
     override fun close() {
         s.save()
-        super.close()
+        client?.setScreen(parent)
+    }
+
+    override fun keyPressed(input: KeyInput): Boolean {
+        if (focused !is TextFieldWidget && SlotCyclerMod.menuKey?.matchesKey(input) == true) {
+            close()
+            return true
+        }
+        return super.keyPressed(input)
     }
 
     override fun shouldPause() = false
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val fade = fade()
-        context.backdrop(width, height, fade)
+        context.backdrop(width, height, fade, seconds())
         context.shifted(slide(fade)) { drawPanel(context, fade) }
     }
 
     private fun drawPanel(context: DrawContext, fade: Float) {
         context.panel(px, py, PANEL_W, PANEL_H, fade, seconds())
         val mid = px + PANEL_W / 2
-        context.drawCenteredTextWithShadow(textRenderer, TITLE, mid, py + 10, TEXT)
+        context.title(mid, py + 10, seconds())
         context.drawCenteredTextWithShadow(textRenderer, SUBTITLES[tab], mid, py + 24, TEXT_DIM)
         context.fill(px + 12, py + 37, px + PANEL_W - 12, py + 38, EDGE)
         context.fill(px + 12 + SIDE_W + 6, py + TOP, px + 12 + SIDE_W + 7, py + PANEL_H - 30, EDGE)
@@ -140,7 +158,7 @@ class HubScreen : Screen(Text.literal("Slot Cycler")) {
     }
 
     private fun drawPerformance(context: DrawContext) {
-        var y = py + TOP + 33
+        var y = py + TOP + 62
         context.drawTextWithShadow(textRenderer, "PERFORMANCE MODS", cx + 1, y, ACCENT_MID)
         val fps = "${client?.currentFps ?: 0} fps"
         context.drawTextWithShadow(textRenderer, fps, cx + cw - textRenderer.getWidth(fps), y, TEXT_DIM)

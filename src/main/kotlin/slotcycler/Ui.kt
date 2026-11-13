@@ -7,6 +7,7 @@ import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder
 import net.minecraft.item.ItemStack
 import net.minecraft.client.gui.widget.ClickableWidget
 import net.minecraft.text.Text
+import net.minecraft.util.Util
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -76,18 +77,93 @@ object Ui {
         }
     }
 
+    private val fx get() = Settings.current.menuFx
+    private val titleChars = TITLE.map { it.toString() }
+    private val titleWidths by lazy { IntArray(titleChars.size) { font.getWidth(titleChars[it]) } }
+
+    fun now(): Float = (Util.getMeasuringTimeMs() % 3_600_000L) / 1000f
+
     fun DrawContext.panel(x: Int, y: Int, w: Int, h: Int, fade: Float, seconds: Float) {
-        roundRect(x - 3, y - 3, x + w + 3, y + h + 3, alpha(0, (0x28 * fade).toInt()))
-        roundRect(x - 2, y - 2, x + w + 2, y + h + 2, alpha(0, (0x38 * fade).toInt()))
+        val phase = (sin(seconds * 1.2f) + 1f) / 2f
+        val a = lerpColor(phase, ACCENT_A, ACCENT_B)
+        val b = lerpColor(phase, ACCENT_B, ACCENT_A)
+        if (fx) {
+            for (i in 4 downTo 1) {
+                roundRect(x - 1 - i * 2, y - 1 - i * 2, x + w + 1 + i * 2, y + h + 1 + i * 2,
+                    alpha(if (i % 2 == 0) a else b, ((20 - i * 4) * fade).toInt()))
+            }
+        } else {
+            roundRect(x - 3, y - 3, x + w + 3, y + h + 3, alpha(0, (0x28 * fade).toInt()))
+            roundRect(x - 2, y - 2, x + w + 2, y + h + 2, alpha(0, (0x38 * fade).toInt()))
+        }
         roundRect(x - 1, y - 1, x + w + 1, y + h + 1, EDGE)
         fill(x, y, x + w, y + h, PANEL_BG)
         fillGradient(x, y + 1, x + w, y + 37, HEADER_BG, PANEL_BG)
-        val phase = (sin(seconds * 1.2f) + 1f) / 2f
-        sweep(x, y, x + w, y + 1, lerpColor(phase, ACCENT_A, ACCENT_B), lerpColor(phase, ACCENT_B, ACCENT_A))
+        sweep(x, y, x + w, y + 1, a, b)
+        if (fx) {
+            sweep(x, y + h - 1, x + w, y + h, alpha(b, 0x90), alpha(a, 0x90))
+            fillGradient(x - 1, y + 1, x, y + h - 1, a, alpha(b, 0x90))
+            fillGradient(x + w, y + 1, x + w + 1, y + h - 1, b, alpha(a, 0x90))
+            val tick = lerpColor(phase * 0.5f, WHITE, a)
+            corner(x - 4, y - 4, 1, 1, tick)
+            corner(x + w + 3, y - 4, -1, 1, tick)
+            corner(x - 4, y + h + 3, 1, -1, tick)
+            corner(x + w + 3, y + h + 3, -1, -1, tick)
+        }
     }
 
-    fun DrawContext.backdrop(width: Int, height: Int, fade: Float) {
-        fillGradient(0, 0, width, height, alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x0C0D16, (0xD8 * fade).toInt()))
+    private fun DrawContext.corner(x: Int, y: Int, dx: Int, dy: Int, color: Int) {
+        val x2 = x + dx * 7
+        val y2 = y + dy * 7
+        fill(minOf(x, x2 + dx), y, maxOf(x, x2) + (if (dx > 0) 0 else 1), y + 1, color)
+        fill(x, minOf(y, y2 + dy), x + 1, maxOf(y, y2) + (if (dy > 0) 0 else 1), color)
+    }
+
+    fun DrawContext.title(centerX: Int, y: Int, seconds: Float) {
+        if (!fx) {
+            drawCenteredTextWithShadow(font, TITLE, centerX, y, TEXT)
+            return
+        }
+        var x = centerX - titleWidths.sum() / 2
+        for (i in titleChars.indices) {
+            if (titleChars[i] != " ") {
+                val wave = (sin(seconds * 2.2f - i * 0.32f) + 1f) / 2f
+                drawTextWithShadow(font, titleChars[i], x, y, lerpColor(0.25f, lerpColor(wave, ACCENT_A, ACCENT_B), WHITE))
+            }
+            x += titleWidths[i]
+        }
+    }
+
+    fun DrawContext.backdrop(width: Int, height: Int, fade: Float, seconds: Float) {
+        fillGradient(0, 0, width, height, alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x120B24, (0xD8 * fade).toInt()))
+        if (!fx) return
+        for (i in 0 until 40) {
+            val seed = i * 97.13f
+            val speed = 5f + (i % 7) * 2.5f
+            val x = ((seed * 31f + seconds * speed * 0.4f) % (width + 20)).toInt() - 10
+            val y = height - ((seed * 17f + seconds * speed) % (height + 20)).toInt()
+            val twinkle = (sin(seconds * 2f + i) + 1f) / 2f
+            val size = 1 + i % 2
+            fill(x, y, x + size, y + size,
+                alpha(if (i % 3 == 0) ACCENT_B else ACCENT_A, ((30 + 110 * twinkle) * fade).toInt()))
+        }
+    }
+
+    fun DrawContext.pill(x: Int, y: Int, anim: Float) {
+        if (fx && anim > 0f) roundRect(x - 1, y - 1, x + 25, y + 11, alpha(ACCENT_MID, (0x48 * anim).toInt()))
+        roundRect(x, y, x + 24, y + 10, 0xFF30344A.toInt())
+        if (anim > 0f) {
+            val on = (255 * anim).toInt()
+            if (fx) {
+                fill(x, y + 1, x + 1, y + 9, alpha(ACCENT_A, on))
+                sweep(x + 1, y, x + 23, y + 10, alpha(ACCENT_A, on), alpha(ACCENT_B, on))
+                fill(x + 23, y + 1, x + 24, y + 9, alpha(ACCENT_B, on))
+            } else {
+                roundRect(x, y, x + 24, y + 10, alpha(ACCENT_MID, on))
+            }
+        }
+        val knob = x + 2 + (12 * anim).roundToInt()
+        roundRect(knob, y + 1, knob + 8, y + 9, WHITE)
     }
 
     inline fun DrawContext.shifted(dy: Float, block: () -> Unit) {
@@ -104,7 +180,7 @@ object Ui {
 
     class Button(
         x: Int, y: Int, w: Int, h: Int, private val label: String,
-        private val primary: Boolean, private val action: () -> Unit
+        private val primary: Boolean, private val live: (() -> String)? = null, private val action: () -> Unit
     ) : ClickableWidget(x, y, w, h, Text.literal(label)) {
 
         private var glow = 0f
@@ -117,13 +193,19 @@ object Ui {
                 val dim = 0.3f * (1f - glow)
                 context.sweep(x + 1, y, x + width - 1, y + height,
                     lerpColor(dim, ACCENT_A, OPAQUE), lerpColor(dim, ACCENT_B, OPAQUE))
+                if (fx) {
+                    val head = x + ((now() * 0.55f % 1.8f) * width).toInt() - 14
+                    val from = maxOf(x + 1, head)
+                    val to = minOf(x + width - 1, head + 12)
+                    if (to > from) context.fill(from, y, to, y + height, alpha(WHITE, 0x34))
+                }
             } else {
                 context.roundRect(x, y, x + width, y + height, lerpColor(glow, TRACK, TRACK_HOVER))
                 if (glow > 0f) {
                     context.drawStrokedRectangle(x, y, width, height, alpha(ACCENT_MID, (255 * glow).toInt()))
                 }
             }
-            context.drawCenteredTextWithShadow(font, label, x + width / 2, y + (height - 8) / 2,
+            context.drawCenteredTextWithShadow(font, live?.invoke() ?: label, x + width / 2, y + (height - 8) / 2,
                 if (primary) WHITE else lerpColor(glow, TEXT, WHITE))
         }
 
@@ -148,15 +230,13 @@ object Ui {
             anim = ease(anim, if (get()) 1f else 0f, delta)
             glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
             context.row(x, y, width, height, glow)
+            if (fx && anim > 0f) {
+                context.sweep(x + 2, y + 1, x + width / 2, y + height - 1, alpha(ACCENT_MID, (0x1C * anim).toInt()), alpha(ACCENT_MID, 0))
+            }
             context.drawTextWithShadow(font, label, x + 7, y + 4, lerpColor(maxOf(glow, anim), TEXT_DIM, TEXT))
             context.drawTextWithShadow(font, detail, x + 7, y + 15, lerpColor(glow * 0.5f, TEXT_FAINT, TEXT_DIM))
 
-            val pillW = 24
-            val pillX = x + width - 7 - pillW
-            val pillY = y + 8
-            context.roundRect(pillX, pillY, pillX + pillW, pillY + 10, lerpColor(anim, 0xFF30344A.toInt(), ACCENT_MID))
-            val knobX = pillX + 2 + ((pillW - 12) * anim).roundToInt()
-            context.roundRect(knobX, pillY + 1, knobX + 8, pillY + 9, WHITE)
+            context.pill(x + width - 31, y + 8, anim)
         }
 
         override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
@@ -179,6 +259,10 @@ object Ui {
             pick = ease(pick, if (selected()) 1f else 0f, delta)
             val lit = maxOf(glow * 0.6f, pick)
             if (lit > 0f) context.roundRect(x, y, x + width, y + height, alpha(TRACK_HOVER, (255 * lit).toInt()))
+            if (fx && pick > 0f) {
+                context.sweep(x + 2, y + 1, x + width - 1, y + height - 1,
+                    alpha(ACCENT_A, (0x38 * pick).toInt()), alpha(ACCENT_B, (0x0C * pick).toInt()))
+            }
             if (pick > 0f) {
                 val bar = (height * pick).roundToInt()
                 context.fillGradient(x, y + (height - bar) / 2, x + 2, y + (height + bar) / 2, ACCENT_A, ACCENT_B)
