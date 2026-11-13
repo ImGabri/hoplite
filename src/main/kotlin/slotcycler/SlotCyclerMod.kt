@@ -186,8 +186,8 @@ class SlotCyclerMod : ClientModInitializer {
         keptGhost = null
         realCopy = false
         phase = Phase.CLICKING
-        val mode = if (s.ghostClicks) "ghost" else "real"
-        player.sendMessage(Text.literal("[SlotCycler] $mode-click run started (${s.totalClicks()} clicks)"), true)
+        val mode = if (s.goldIngotMode) "gold_ingot" else s.customItemName.let { it.isNotBlank() ? it : "any_item" }
+        player.sendMessage(Text.literal("[SlotCycler] $mode mode started (${s.totalClicks()} clicks)"), true)
     }
 
     private fun clickTick(

@@ -90,6 +90,22 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             { s.burstDelay }, { s.burstDelay = it }, ::ticks)
         slider("Settle time", 0, Settings.MAX_WAIT, { s.settleTicks }, { s.settleTicks = it }, ::ticks)
         slider("Ghost check wait", 2, Settings.MAX_WAIT, { s.verifyTicks }, { s.verifyTicks = it }, ::ticks)
+        // Item mode selector
+        val itemModes = mapOf(
+            "gold_ingot" to "gold_ingot (id=16)",
+            "iron_ingot" to "iron_ingot (id=280)",
+            "diamond" to "diamond (id=898)",
+            "emerald" to "emerald (id=335)",
+            "lapis_lazuli" to "lapis_lazuli (id=469)",
+            "redstone" to "redstone (id=331)",
+            "copper_ingot" to "copper_ingot (id=283)",
+            "any_item" to "any_item (default)"
+        )
+        val selectedItemIdx = itemModes.keys.toList().indexOfOrNull(s.customItemName) ?: 0
+        val selectedItemName = itemModes.keys.toList().getOrElse("any_item")
+        context.drawCenteredTextWithShadow(
+            textRenderer, "item mode: " + selectedItemName, px + PANEL_W / 2, py + 28,
+            if (s.ghostClicks) WARN else OK)
 
         y = py + 42
         fun toggle(label: String, get: () -> Boolean, set: (Boolean) -> Unit) {

@@ -40,6 +40,10 @@ class Settings {
     var dropSurplus = true
     /** Do one extra move at the end so the stack finishes in slot B. */
     var endInB = false
+    /** When enabled, tracks gold_ingot specifically (item id 16). */
+    var goldIngotMode = config("goldIngotMode", false) { "When enabled, tracks gold_ingot specifically (item id 16)." }
+    /** Custom item name to track when goldIngotMode is false. */
+    var customItemName: String = config("customItemName", "") { "" }
 
     fun clamp() {
         slotA = slotA.coerceIn(1, 9)
