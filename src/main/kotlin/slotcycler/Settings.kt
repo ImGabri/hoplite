@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import net.fabricmc.loader.api.FabricLoader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.Executors
 
 class Settings {
     var slotA = 1
@@ -31,6 +32,19 @@ class Settings {
     var durabilityAlert = true
     var fullbright = false
     var deathCoords = true
+    var fpsBoost = false
+    var savedVideo: SavedVideo? = null
+
+    class SavedVideo {
+        var preset: String? = null
+        var particles: String? = null
+        var clouds: String? = null
+        var shadows = true
+        var blend = 2
+        var transparency = false
+        var leaves = true
+        var vignette = true
+    }
 
     fun trackedTerms(): List<String> =
         (trackedItems ?: "").split(',').map { it.trim().lowercase().replace(' ', '_') }.filter { it.isNotEmpty() }
@@ -58,7 +72,10 @@ class Settings {
 
     fun save() {
         clamp()
-        runCatching { Files.writeString(path, gson.toJson(this)) }
+        val json = gson.toJson(this)
+        if (json == lastWritten) return
+        lastWritten = json
+        writer.execute { runCatching { Files.writeString(path, json) } }
     }
 
     companion object {
@@ -75,6 +92,8 @@ class Settings {
         )
 
         private val gson = GsonBuilder().setPrettyPrinting().create()
+        private val writer = Executors.newSingleThreadExecutor { Thread(it, "slotcycler-config").apply { isDaemon = true } }
+        private var lastWritten: String? = null
         private val path: Path
             get() = FabricLoader.getInstance().configDir.resolve("slotcycler.json")
 
@@ -98,6 +117,8 @@ class Settings {
                 durabilityAlert = old.durabilityAlert
                 fullbright = old.fullbright
                 deathCoords = old.deathCoords
+                fpsBoost = old.fpsBoost
+                savedVideo = old.savedVideo
             }
             current.save()
         }

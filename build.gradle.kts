@@ -3,7 +3,7 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
-version = "2.4.0"
+version = "2.5.0"
 group = "com.example.slotcycler"
 
 base {
@@ -13,7 +13,7 @@ base {
 dependencies {
     minecraft("com.mojang:minecraft:1.21.11")
     mappings("net.fabricmc:yarn:1.21.11+build.6:v2")
-    modImplementation("net.fabricmc:fabric-loader:0.18.2")
+    modImplementation("net.fabricmc:fabric-loader:0.19.5")
     modImplementation("net.fabricmc.fabric-api:fabric-api:0.141.3+1.21.11")
     modImplementation("net.fabricmc:fabric-language-kotlin:1.14.2+kotlin.2.4.21")
 }

@@ -31,7 +31,10 @@ import slotcycler.Ui.alpha
 import slotcycler.Ui.ease
 import slotcycler.Ui.pretty
 import slotcycler.Ui.sweep
+import slotcycler.Ui.backdrop
 import slotcycler.Ui.panel
+import slotcycler.Ui.shifted
+import slotcycler.Ui.slide
 import slotcycler.Ui.roundRect
 import slotcycler.Ui.row
 import kotlin.math.abs
@@ -41,10 +44,10 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
 
     private companion object {
         const val PANEL_W = 392
-        const val PANEL_H = 264
+        const val PANEL_H = 232
         const val COL_W = 180
         const val ROW_H = 18
-        const val ROW_PITCH = 22
+        const val ROW_PITCH = 20
         const val ROWS_TOP = 44
         
         const val PREVIEW_SLOWDOWN = 4
@@ -62,7 +65,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
 
     override fun init() {
         px = (width - PANEL_W) / 2
-        py = (height - PANEL_H) / 2
+        py = maxOf(4, (height - PANEL_H) / 2)
         val left = px + 12
         val right = px + PANEL_W - 12 - COL_W
         var y = py + ROWS_TOP
@@ -103,7 +106,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
         toggle("Finish in slot B", "One extra move so the stack ends in slot B.",
             { s.endInB }, { s.endInB = it })
 
-        val by = py + PANEL_H - 22
+        val by = py + PANEL_H - 20
         addDrawableChild(FancyButton(left, by, 70, "Reset", false) {
             Settings.reset()
             clearAndInit()
@@ -128,10 +131,12 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val fade = (seconds() / 0.2f).coerceIn(0f, 1f)
-        context.fillGradient(0, 0, width, height,
-            alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x0C0D16, (0xD8 * fade).toInt()))
+        context.backdrop(width, height, fade)
+        context.shifted(slide(fade)) { drawPanel(context, fade) }
+    }
 
-        context.panel(px, py, PANEL_W, PANEL_H, fade)
+    private fun drawPanel(context: DrawContext, fade: Float) {
+        context.panel(px, py, PANEL_W, PANEL_H, fade, seconds())
 
         val mid = px + PANEL_W / 2
         context.drawCenteredTextWithShadow(textRenderer, TITLE, mid, py + 10, TEXT)
@@ -144,13 +149,15 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Sl
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        super.render(context, mouseX, mouseY, delta)
-        drawPreview(context)
+        context.shifted(slide((seconds() / 0.2f).coerceIn(0f, 1f))) {
+            super.render(context, mouseX, mouseY, delta)
+            drawPreview(context)
+        }
     }
 
     private fun drawPreview(context: DrawContext) {
         val boxX = px + PANEL_W - 12 - COL_W
-        val boxY = py + 176
+        val boxY = py + 166
         context.roundRect(boxX, boxY, boxX + COL_W, boxY + 44, TRACK)
 
         val slot = 18

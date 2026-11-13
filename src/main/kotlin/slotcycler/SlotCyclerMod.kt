@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMaps
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.network.ClientPlayerInteractionManager
@@ -24,6 +25,9 @@ class SlotCyclerMod : ClientModInitializer {
 
     companion object {
         const val MOD_ID = "slotcycler"
+        val VERSION: String by lazy {
+            FabricLoader.getInstance().getModContainer(MOD_ID).map { it.metadata.version.friendlyString }.orElse("dev")
+        }
         private const val MOUSE_BUTTON_LEFT = 0
         private const val HOTBAR_START = 36
         private const val MAX_DROPS_PER_TICK = 64

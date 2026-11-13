@@ -141,7 +141,7 @@ object Qol {
             val pos = player.blockPos
             val ping = client.networkHandler?.getPlayerListEntry(player.uuid)?.latency ?: 0
             val facing = player.horizontalFacing.name.first()
-            infoLine = "${pos.x} ${pos.y} ${pos.z}  ·  $facing  ·  $ping ms"
+            infoLine = "${pos.x} ${pos.y} ${pos.z}  ·  $facing  ·  $ping ms  ·  ${client.currentFps} fps"
             infoWidth = font.getWidth(infoLine)
         }
 
@@ -203,8 +203,9 @@ object Qol {
         }
         if (!debug) {
             for (line in effectLines) {
-                context.roundRect(4, y, 4 + line.width + 8, y + 12, CHIP_BG)
-                context.drawTextWithShadow(font, line.text, 8, y + 2, line.color)
+                context.roundRect(4, y, 4 + line.width + 11, y + 12, CHIP_BG)
+                context.fill(4, y + 1, 6, y + 11, line.color)
+                context.drawTextWithShadow(font, line.text, 10, y + 2, TEXT)
                 y += 13
             }
         }

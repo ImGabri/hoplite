@@ -4,20 +4,23 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.Click
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder
-import net.minecraft.client.gui.tooltip.Tooltip
+import net.minecraft.item.ItemStack
 import net.minecraft.client.gui.widget.ClickableWidget
 import net.minecraft.text.Text
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 object Ui {
     const val OPAQUE = 0xFF000000.toInt()
     const val PANEL_BG = 0xF00C0D16.toInt()
+    const val HEADER_BG = 0xF0141628.toInt()
     const val CHIP_BG = 0xA00C0D16.toInt()
     const val TRACK = 0xFF1B1E2E.toInt()
     const val TRACK_HOVER = 0xFF252A40.toInt()
     const val TEXT = 0xFFE8ECFF.toInt()
     const val TEXT_DIM = 0xFF8A90B0.toInt()
+    const val TEXT_FAINT = 0xFF5F6585.toInt()
     const val ACCENT_A = 0xFF35E0FF.toInt()
     const val ACCENT_B = 0xFFB65CFF.toInt()
     const val ACCENT_MID = 0xFF769EFF.toInt()
@@ -73,12 +76,29 @@ object Ui {
         }
     }
 
-    fun DrawContext.panel(x: Int, y: Int, w: Int, h: Int, fade: Float) {
-        roundRect(x - 2, y - 2, x + w + 2, y + h + 2, alpha(0, (0x30 * fade).toInt()))
+    fun DrawContext.panel(x: Int, y: Int, w: Int, h: Int, fade: Float, seconds: Float) {
+        roundRect(x - 3, y - 3, x + w + 3, y + h + 3, alpha(0, (0x28 * fade).toInt()))
+        roundRect(x - 2, y - 2, x + w + 2, y + h + 2, alpha(0, (0x38 * fade).toInt()))
         roundRect(x - 1, y - 1, x + w + 1, y + h + 1, EDGE)
         fill(x, y, x + w, y + h, PANEL_BG)
-        sweep(x, y, x + w, y + 1, ACCENT_A, ACCENT_B)
+        fillGradient(x, y + 1, x + w, y + 37, HEADER_BG, PANEL_BG)
+        val phase = (sin(seconds * 1.2f) + 1f) / 2f
+        sweep(x, y, x + w, y + 1, lerpColor(phase, ACCENT_A, ACCENT_B), lerpColor(phase, ACCENT_B, ACCENT_A))
     }
+
+    fun DrawContext.backdrop(width: Int, height: Int, fade: Float) {
+        fillGradient(0, 0, width, height, alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x0C0D16, (0xD8 * fade).toInt()))
+    }
+
+    inline fun DrawContext.shifted(dy: Float, block: () -> Unit) {
+        if (dy == 0f) return block()
+        matrices.pushMatrix()
+        matrices.translate(0f, dy)
+        block()
+        matrices.popMatrix()
+    }
+
+    fun slide(fade: Float): Float = (1f - fade) * (1f - fade) * 10f
 
     private val font get() = MinecraftClient.getInstance().textRenderer
 
@@ -112,17 +132,13 @@ object Ui {
         }
     }
 
-    class Toggle(
-        x: Int, y: Int, w: Int, private val label: String, hint: String,
+    class Option(
+        x: Int, y: Int, w: Int, private val label: String, private val detail: String,
         private val get: () -> Boolean, private val set: (Boolean) -> Unit
-    ) : ClickableWidget(x, y, w, 18, Text.literal(label)) {
+    ) : ClickableWidget(x, y, w, 26, Text.literal(label)) {
 
         private var anim = if (get()) 1f else 0f
         private var glow = 0f
-
-        init {
-            setTooltip(Tooltip.of(Text.literal(hint)))
-        }
 
         override fun onClick(click: Click, doubled: Boolean) {
             set(!get())
@@ -132,11 +148,12 @@ object Ui {
             anim = ease(anim, if (get()) 1f else 0f, delta)
             glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
             context.row(x, y, width, height, glow)
-            context.drawTextWithShadow(font, label, x + 6, y + 5, lerpColor(maxOf(glow, anim * 0.6f), TEXT_DIM, TEXT))
+            context.drawTextWithShadow(font, label, x + 7, y + 4, lerpColor(maxOf(glow, anim), TEXT_DIM, TEXT))
+            context.drawTextWithShadow(font, detail, x + 7, y + 15, lerpColor(glow * 0.5f, TEXT_FAINT, TEXT_DIM))
 
             val pillW = 24
-            val pillX = x + width - 5 - pillW
-            val pillY = y + 4
+            val pillX = x + width - 7 - pillW
+            val pillY = y + 8
             context.roundRect(pillX, pillY, pillX + pillW, pillY + 10, lerpColor(anim, 0xFF30344A.toInt(), ACCENT_MID))
             val knobX = pillX + 2 + ((pillW - 12) * anim).roundToInt()
             context.roundRect(knobX, pillY + 1, knobX + 8, pillY + 9, WHITE)
@@ -147,22 +164,27 @@ object Ui {
         }
     }
 
-    class Link(
-        x: Int, y: Int, w: Int, private val label: String, private val detail: String,
-        private val action: () -> Unit
-    ) : ClickableWidget(x, y, w, 22, Text.literal(label)) {
+    class Tab(
+        x: Int, y: Int, w: Int, private val label: String, private val icon: ItemStack,
+        private val selected: () -> Boolean, private val action: () -> Unit
+    ) : ClickableWidget(x, y, w, 20, Text.literal(label)) {
 
         private var glow = 0f
+        private var pick = if (selected()) 1f else 0f
 
         override fun onClick(click: Click, doubled: Boolean) = action()
 
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
             glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
-            context.row(x, y, width, height, glow)
-            context.drawTextWithShadow(font, label, x + 8, y + 7, lerpColor(glow, TEXT, WHITE))
-            context.drawTextWithShadow(font, detail, x + 14 + font.getWidth(label), y + 7, TEXT_DIM)
-            context.drawTextWithShadow(font, "›", x + width - 12 + (2 * glow).roundToInt(), y + 7,
-                lerpColor(glow, TEXT_DIM, ACCENT_A))
+            pick = ease(pick, if (selected()) 1f else 0f, delta)
+            val lit = maxOf(glow * 0.6f, pick)
+            if (lit > 0f) context.roundRect(x, y, x + width, y + height, alpha(TRACK_HOVER, (255 * lit).toInt()))
+            if (pick > 0f) {
+                val bar = (height * pick).roundToInt()
+                context.fillGradient(x, y + (height - bar) / 2, x + 2, y + (height + bar) / 2, ACCENT_A, ACCENT_B)
+            }
+            context.drawItem(icon, x + 5, y + 2)
+            context.drawTextWithShadow(font, label, x + 25, y + 6, lerpColor(lit, TEXT_DIM, WHITE))
         }
 
         override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
