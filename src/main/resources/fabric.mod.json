@@ -3,7 +3,8 @@
   "id": "slotcycler",
   "version": "${version}",
   "name": "Slot Cycler",
-  "description": "Cycle an item between two hotbar slots, check for ghost items and drop surplus. Install on the server too to make the copy a real item. X to run, Right Shift for settings.",
+  "description": "Client-side utility: cycle an item between two hotbar slots, check for ghost items and drop surplus. X to run, Right Shift for settings.",
+  "environment": "client",
   "authors": ["ImGabri"],
   "contact": {
     "homepage": "https://github.com/ImGabri/slotcycler",
