@@ -5,25 +5,27 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder
 import net.minecraft.client.gui.widget.ClickableWidget
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.SliderWidget
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
+import net.minecraft.registry.Registries
 import net.minecraft.text.Text
+import net.minecraft.util.Identifier
 import net.minecraft.util.Util
-import net.minecraft.util.math.MathHelper
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
-/** Settings screen: sliders and switches on the left and right, live preview below. */
 class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
 
     private companion object {
         const val PANEL_W = 392
-        const val PANEL_H = 244
+        const val PANEL_H = 264
         const val COL_W = 180
         const val ROW_H = 18
         const val ROW_PITCH = 22
+        const val ROWS_TOP = 44
+        const val SWEEP_PARTS = 12
 
         const val OPAQUE = 0xFF000000.toInt()
         const val PANEL_BG = 0xF00C0D16.toInt()
@@ -33,15 +35,15 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         const val TEXT_DIM = 0xFF8A90B0.toInt()
         const val ACCENT_A = 0xFF35E0FF.toInt()
         const val ACCENT_B = 0xFFB65CFF.toInt()
+        const val ACCENT_MID = 0xFF769EFF.toInt()
+        const val EDGE = 0xFF2C3148.toInt()
+        const val WHITE = 0xFFFFFFFF.toInt()
+        const val TITLE = "S L O T   C Y C L E R"
         const val WARN = 0xFFFF6B7A.toInt()
         const val OK = 0xFF5CFFA0.toInt()
 
-        /** The preview plays this many times slower than the real run. */
         const val PREVIEW_SLOWDOWN = 4
         const val MS_PER_TICK = 50
-
-        fun hue(h: Float, s: Float = 0.75f, v: Float = 1f): Int =
-            MathHelper.hsvToRgb(((h % 1f) + 1f) % 1f, s, v) or OPAQUE
 
         fun lerpColor(t: Float, a: Int, b: Int): Int {
             fun ch(shift: Int): Int {
@@ -52,7 +54,26 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             return ch(24) or ch(16) or ch(8) or ch(0)
         }
 
-        /** A filled rectangle with its four corner pixels cut off. */
+        fun alpha(color: Int, a: Int): Int = (color and 0xFFFFFF) or (a.coerceIn(0, 255) shl 24)
+
+        fun ease(current: Float, target: Float, delta: Float): Float {
+            val next = current + (target - current) * (0.35f * delta).coerceAtMost(1f)
+            return if (abs(target - next) < 0.01f) target else next
+        }
+
+        fun pretty(id: String): String =
+            id.split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+
+        fun DrawContext.sweep(x1: Int, y1: Int, x2: Int, y2: Int, from: Int, to: Int) {
+            val w = x2 - x1
+            if (w <= 0) return
+            val parts = minOf(SWEEP_PARTS, w)
+            for (i in 0 until parts) {
+                fill(x1 + w * i / parts, y1, x1 + w * (i + 1) / parts, y2,
+                    lerpColor((i + 0.5f) / parts, from, to))
+            }
+        }
+
         fun DrawContext.roundRect(x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
             fill(x1 + 1, y1, x2 - 1, y2, color)
             fill(x1, y1 + 1, x1 + 1, y2 - 1, color)
@@ -62,6 +83,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
 
     private val s get() = Settings.current
     private val openedAt = Util.getMeasuringTimeMs()
+    private val placeholder = ItemStack(Items.DIAMOND)
     private var px = 0
     private var py = 0
 
@@ -72,7 +94,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         py = (height - PANEL_H) / 2
         val left = px + 12
         val right = px + PANEL_W - 12 - COL_W
-        var y = py + 42
+        var y = py + ROWS_TOP
 
         fun slider(label: String, min: Int, max: Int, get: () -> Int, set: (Int) -> Unit,
                    show: (Int) -> String = { it.toString() }) {
@@ -90,34 +112,25 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             { s.burstDelay }, { s.burstDelay = it }, ::ticks)
         slider("Settle time", 0, Settings.MAX_WAIT, { s.settleTicks }, { s.settleTicks = it }, ::ticks)
         slider("Ghost check wait", 2, Settings.MAX_WAIT, { s.verifyTicks }, { s.verifyTicks = it }, ::ticks)
-        // Item mode selector
-        val itemModes = mapOf(
-            "gold_ingot" to "gold_ingot (id=16)",
-            "iron_ingot" to "iron_ingot (id=280)",
-            "diamond" to "diamond (id=898)",
-            "emerald" to "emerald (id=335)",
-            "lapis_lazuli" to "lapis_lazuli (id=469)",
-            "redstone" to "redstone (id=331)",
-            "copper_ingot" to "copper_ingot (id=283)",
-            "any_item" to "any_item (default)"
-        )
-        val selectedItemIdx = itemModes.keys.toList().indexOfOrNull(s.customItemName) ?: 0
-        val selectedItemName = itemModes.keys.toList().getOrElse("any_item")
-        context.drawCenteredTextWithShadow(
-            textRenderer, "item mode: " + selectedItemName, px + PANEL_W / 2, py + 28,
-            if (s.ghostClicks) WARN else OK)
+        addDrawableChild(FancyCycler(left, y))
 
-        y = py + 42
-        fun toggle(label: String, get: () -> Boolean, set: (Boolean) -> Unit) {
-            addDrawableChild(FancyToggle(right, y, label, get, set))
+        y = py + ROWS_TOP
+        fun toggle(label: String, hint: String, get: () -> Boolean, set: (Boolean) -> Unit) {
+            addDrawableChild(FancyToggle(right, y, label, hint, get, set))
             y += ROW_PITCH
         }
-        toggle("Ghost clicks (client-only, display-only)", { s.ghostClicks }, { s.ghostClicks = it })
-        toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
-        toggle("Real copy (singleplayer/creative only)", { s.realCopy }, { s.realCopy = it })
-        toggle("Check for ghost items (server resync)", { s.ghostCheck }, { s.ghostCheck = it })
-        toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
-        toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
+        toggle("Ghost clicks", "Clicks stay on the client. Display-only on remote servers.",
+            { s.ghostClicks }, { s.ghostClicks = it })
+        toggle("Keep ghost visible", "Redraw the display copy until you press Clear ghosts.",
+            { s.keepGhost }, { s.keepGhost = it })
+        toggle("Real copy", "Singleplayer or multiplayer creative only. Needs Ghost clicks.",
+            { s.realCopy }, { s.realCopy = it })
+        toggle("Ghost check", "Ask the server for the real inventory after the run.",
+            { s.ghostCheck }, { s.ghostCheck = it })
+        toggle("Drop surplus", "Drop anything slot A gained, like pressing Q.",
+            { s.dropSurplus }, { s.dropSurplus = it })
+        toggle("Finish in slot B", "One extra move so the stack ends in slot B.",
+            { s.endInB }, { s.endInB = it })
 
         val by = py + PANEL_H - 22
         addDrawableChild(FancyButton(left, by, 70, "Reset", false) {
@@ -141,81 +154,24 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
 
     override fun shouldPause() = false
 
-    // ---------------------------------------------------------------- drawing
-
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        val t = seconds()
-        // Fade the whole screen in over the first quarter second.
-        val fade = (t / 0.25f).coerceIn(0f, 1f)
-        val top = ((0xC0 * fade).toInt() shl 24) or 0x05060F
-        val bottom = ((0xD8 * fade).toInt() shl 24) or 0x1A0B2E
-        context.fillGradient(0, 0, width, height, top, bottom)
-        drawParticles(context, t)
+        val fade = (seconds() / 0.2f).coerceIn(0f, 1f)
+        context.fillGradient(0, 0, width, height,
+            alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x0C0D16, (0xD8 * fade).toInt()))
 
-        // Soft glow, then the panel, then a border whose colours travel round it.
-        for (i in 3 downTo 1) {
-            val glow = lerpColor((sin(t * 1.5f) + 1f) / 2f, ACCENT_A, ACCENT_B)
-            context.roundRect(px - i * 2, py - i * 2, px + PANEL_W + i * 2, py + PANEL_H + i * 2,
-                (glow and 0xFFFFFF) or ((10 - i * 2) shl 24))
-        }
+        context.roundRect(px - 2, py - 2, px + PANEL_W + 2, py + PANEL_H + 2, alpha(0, (0x30 * fade).toInt()))
+        context.roundRect(px - 1, py - 1, px + PANEL_W + 1, py + PANEL_H + 1, EDGE)
         context.fill(px, py, px + PANEL_W, py + PANEL_H, PANEL_BG)
-        drawBorder(context, t)
+        context.sweep(px, py, px + PANEL_W, py + 1, ACCENT_A, ACCENT_B)
 
-        drawTitle(context, t)
-        context.fillGradient(px + 12, py + 35, px + PANEL_W - 12, py + 36, 0x6035E0FF, 0x60B65CFF)
-    }
-
-    private fun drawParticles(context: DrawContext, t: Float) {
-        for (i in 0 until 48) {
-            val seed = i * 97.13f
-            val speed = 6f + (i % 7) * 3f
-            val x = ((seed * 31f + t * speed * 0.4f) % (width + 20)) - 10
-            val y = height - ((seed * 17f + t * speed) % (height + 20))
-            val twinkle = (sin(t * 2f + i) + 1f) / 2f
-            val alpha = (40 + 120 * twinkle).toInt()
-            val size = 1 + i % 2
-            val color = (hue(0.5f + (i % 10) * 0.03f, 0.5f) and 0xFFFFFF) or (alpha shl 24)
-            context.fill(x.toInt(), y.toInt(), x.toInt() + size, y.toInt() + size, color)
-        }
-    }
-
-    private fun drawBorder(context: DrawContext, t: Float) {
-        val seg = 6
-        val perimeter = (PANEL_W + PANEL_H) * 2f
-        fun color(distance: Int) = hue(0.5f + 0.18f * sin((distance / perimeter) * 6.283f * 2f - t * 2f))
-        var x = 0
-        while (x < PANEL_W) {
-            val w = minOf(seg, PANEL_W - x)
-            context.fill(px + x, py, px + x + w, py + 1, color(x))
-            context.fill(px + x, py + PANEL_H - 1, px + x + w, py + PANEL_H,
-                color(PANEL_W * 2 + PANEL_H - x))
-            x += seg
-        }
-        var y = 0
-        while (y < PANEL_H) {
-            val h = minOf(seg, PANEL_H - y)
-            context.fill(px + PANEL_W - 1, py + y, px + PANEL_W, py + y + h, color(PANEL_W + y))
-            context.fill(px, py + y, px + 1, py + y + h, color((perimeter - y).toInt()))
-            y += seg
-        }
-    }
-
-    private fun drawTitle(context: DrawContext, t: Float) {
-        val title = "S L O T   C Y C L E R"
-        var x = px + (PANEL_W - textRenderer.getWidth(title)) / 2
-        title.forEachIndexed { i, c ->
-            val ch = c.toString()
-            val bob = (sin(t * 3f - i * 0.35f) * 1.5f).roundToInt()
-            context.drawTextWithShadow(textRenderer, ch, x, py + 9 + bob, hue(0.5f + i * 0.012f + t * 0.08f, 0.55f))
-            x += textRenderer.getWidth(ch)
-        }
-        context.drawCenteredTextWithShadow(
-            textRenderer, "ghost items · surplus drop · timing", px + PANEL_W / 2, py + 23, TEXT_DIM
-        )
-        val modeLine = if (s.ghostClicks) "Mode: Ghost clicks — client-only, display-only on remote servers"
-            else "Mode: Real clicks — server-authoritative, works on any server without rights"
-        context.drawCenteredTextWithShadow(textRenderer, modeLine, px + PANEL_W / 2, py + 35,
-            if (s.ghostClicks) WARN else OK)
+        val mid = px + PANEL_W / 2
+        context.drawCenteredTextWithShadow(textRenderer, TITLE, mid, py + 10, TEXT)
+        val ghost = s.ghostClicks
+        val line = if (ghost) "Ghost mode \u00B7 client-side, display-only" else "Real mode \u00B7 server-authoritative"
+        val lineX = mid - textRenderer.getWidth(line) / 2
+        context.fill(lineX - 7, py + 26, lineX - 3, py + 30, if (ghost) ACCENT_B else OK)
+        context.drawTextWithShadow(textRenderer, line, lineX, py + 24, TEXT_DIM)
+        context.fill(px + 12, py + 37, px + PANEL_W - 12, py + 38, EDGE)
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -223,10 +179,9 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         drawPreview(context)
     }
 
-    /** A miniature hotbar showing the configured run in slow motion, plus totals. */
     private fun drawPreview(context: DrawContext) {
         val boxX = px + PANEL_W - 12 - COL_W
-        val boxY = py + 174
+        val boxY = py + 176
         context.roundRect(boxX, boxY, boxX + COL_W, boxY + 44, TRACK)
 
         val slot = 18
@@ -237,12 +192,12 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             val accent = when (i + 1) {
                 s.slotA -> ACCENT_A
                 s.slotB -> ACCENT_B
-                else -> 0xFF2C3148.toInt()
+                else -> EDGE
             }
             context.fill(x + 1, barY + 1, x + slot - 1, barY + slot - 1, 0xFF10121C.toInt())
             context.drawStrokedRectangle(x + 1, barY + 1, slot - 2, slot - 2, accent)
             context.drawCenteredTextWithShadow(textRenderer, "${i + 1}", x + slot / 2, barY - 9,
-                if (accent == 0xFF2C3148.toInt()) TEXT_DIM else accent)
+                if (accent == EDGE) TEXT_DIM else accent)
         }
 
         if (s.slotA == s.slotB) {
@@ -251,7 +206,6 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             return
         }
 
-        // Replay the click schedule in slow motion: where is the stack after `step` clicks?
         val total = s.totalClicks()
         val runTicks = s.clickTicks()
         val loop = runTicks + 6
@@ -266,14 +220,17 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             else -> (ax + bx) / 2 to barY - 5
         }
         val held = client?.player?.inventory?.getStack(s.slotA - 1)?.takeIf { !it.isEmpty }
-            ?: ItemStack(Items.DIAMOND)
+            ?: placeholder
         context.drawItem(held, ix, iy)
         if (s.ghostClicks && step == total) {
-            // A ghost run ends with a washed-out copy in the other slot.
             val gx = if (ix == ax) bx else ax
             context.drawItem(held, gx, barY + 1)
             context.fill(gx, barY + 1, gx + 16, barY + 17, 0x8010121C.toInt())
         }
+
+        val progress = (tick.toFloat() / runTicks).coerceIn(0f, 1f)
+        context.sweep(boxX + 2, boxY + 42, boxX + 2 + ((COL_W - 4) * progress).roundToInt(), boxY + 43,
+            ACCENT_A, ACCENT_B)
 
         val ms = runTicks * MS_PER_TICK
         val mode = if (s.ghostClicks) "ghost" else "real"
@@ -283,8 +240,6 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         context.drawTextWithShadow(textRenderer, time, boxX + COL_W - 6 - textRenderer.getWidth(time),
             boxY + 33, TEXT)
     }
-
-    // ---------------------------------------------------------------- widgets
 
     private inner class FancySlider(
         x: Int, y: Int, private val label: String,
@@ -305,59 +260,107 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             set(min + (value * (max - min)).roundToInt())
         }
 
+        private var glow = 0f
+
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
             val lit = isHovered || isFocused
-            context.roundRect(x, y, x + width, y + height, if (lit) TRACK_HOVER else TRACK)
+            glow = ease(glow, if (lit) 1f else 0f, delta)
+            drawRow(context, x, y, width, height, glow)
 
-            // Fill up to the snapped value so the bar steps with the number.
             val fraction = (get() - min).toFloat() / (max - min)
-            val fillW = (fraction * (width - 4)).roundToInt()
-            if (fillW > 0) {
-                val end = lerpColor(fraction, ACCENT_A, ACCENT_B)
-                for (i in 0 until fillW) {
-                    val c = lerpColor(i.toFloat() / (width - 4), ACCENT_A, end)
-                    context.fill(x + 2 + i, y + height - 4, x + 3 + i, y + height - 2,
-                        (c and 0xFFFFFF) or (if (lit) OPAQUE else 0xC0000000.toInt()))
-                }
-            }
+            val span = width - 4
+            val fillW = (fraction * span).roundToInt()
+            context.fill(x + 2, y + height - 4, x + 2 + span, y + height - 2, 0xFF10121C.toInt())
+            val knob = lerpColor(fraction, ACCENT_A, ACCENT_B)
+            context.sweep(x + 2, y + height - 4, x + 2 + fillW, y + height - 2, ACCENT_A, knob)
             val knobX = x + 2 + fillW
-            context.fill(knobX - 1, y + height - 6, knobX + 1, y + height, 0xFFFFFFFF.toInt())
+            context.fill(knobX - 1, y + height - 6, knobX + 1, y + height, WHITE)
 
-            context.drawTextWithShadow(textRenderer, label, x + 5, y + 2, if (lit) TEXT else TEXT_DIM)
+            context.drawTextWithShadow(textRenderer, label, x + 6, y + 2, lerpColor(glow, TEXT_DIM, TEXT))
             val text = show(get())
             context.drawTextWithShadow(textRenderer, text, x + width - 5 - textRenderer.getWidth(text),
                 y + 2, TEXT)
         }
     }
 
+    private fun drawRow(context: DrawContext, x: Int, y: Int, w: Int, h: Int, glow: Float) {
+        context.roundRect(x, y, x + w, y + h, lerpColor(glow, TRACK, TRACK_HOVER))
+        if (glow > 0f) {
+            val bar = (h * glow).roundToInt()
+            val top = y + (h - bar) / 2
+            context.fill(x, top, x + 2, top + bar, alpha(ACCENT_MID, (255 * glow).toInt()))
+        }
+    }
+
+    private inner class FancyCycler(x: Int, y: Int) :
+        ClickableWidget(x, y, COL_W, ROW_H, Text.literal("Item filter")) {
+
+        private var glow = 0f
+        private val icons = Settings.ITEM_MODES.map {
+            if (it == Settings.ANY_ITEM) ItemStack.EMPTY else ItemStack(Registries.ITEM.get(Identifier.ofVanilla(it)))
+        }
+        private val names = Settings.ITEM_MODES.map {
+            "\u2039 " + (if (it == Settings.ANY_ITEM) "Any item" else pretty(it)) + " \u203A"
+        }
+
+        init {
+            setTooltip(Tooltip.of(Text.literal("Only run when slot A holds this item. Click to change.")))
+        }
+
+        override fun onClick(click: Click, doubled: Boolean) {
+            val modes = Settings.ITEM_MODES
+            s.itemMode = modes[(s.itemModeIndex() + 1) % modes.size]
+        }
+
+        override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+            glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
+            drawRow(context, x, y, width, height, glow)
+            context.drawTextWithShadow(textRenderer, "Item filter", x + 6, y + 5, lerpColor(glow, TEXT_DIM, TEXT))
+
+            val index = s.itemModeIndex()
+            var right = x + width - 5
+            if (!icons[index].isEmpty) {
+                right -= 17
+                context.drawItem(icons[index], right, y + 1)
+            }
+            val name = names[index]
+            context.drawTextWithShadow(textRenderer, name, right - 2 - textRenderer.getWidth(name), y + 5, TEXT)
+        }
+
+        override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
+            appendDefaultNarrations(builder)
+        }
+    }
+
     private inner class FancyToggle(
-        x: Int, y: Int, private val label: String,
+        x: Int, y: Int, private val label: String, hint: String,
         private val get: () -> Boolean, private val set: (Boolean) -> Unit
     ) : ClickableWidget(x, y, COL_W, ROW_H, Text.literal(label)) {
 
-        /** 0 = off, 1 = on; eases towards the real value so the knob slides. */
         private var anim = if (get()) 1f else 0f
+        private var glow = 0f
+
+        init {
+            setTooltip(Tooltip.of(Text.literal(hint)))
+        }
 
         override fun onClick(click: Click, doubled: Boolean) {
             set(!get())
         }
 
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-            val target = if (get()) 1f else 0f
-            anim += (target - anim) * (0.35f * delta).coerceAtMost(1f)
-            if (abs(target - anim) < 0.01f) anim = target
-
-            val lit = isHovered || isFocused
-            context.roundRect(x, y, x + width, y + height, if (lit) TRACK_HOVER else TRACK)
-            context.drawTextWithShadow(textRenderer, label, x + 5, y + 5, if (lit) TEXT else TEXT_DIM)
+            anim = ease(anim, if (get()) 1f else 0f, delta)
+            glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
+            drawRow(context, x, y, width, height, glow)
+            context.drawTextWithShadow(textRenderer, label, x + 6, y + 5,
+                lerpColor(maxOf(glow, anim * 0.6f), TEXT_DIM, TEXT))
 
             val pillW = 24
             val pillX = x + width - 5 - pillW
             val pillY = y + 4
-            context.roundRect(pillX, pillY, pillX + pillW, pillY + 10,
-                lerpColor(anim, 0xFF30344A.toInt(), lerpColor(0.5f, ACCENT_A, ACCENT_B)))
+            context.roundRect(pillX, pillY, pillX + pillW, pillY + 10, lerpColor(anim, 0xFF30344A.toInt(), ACCENT_MID))
             val knobX = pillX + 2 + ((pillW - 12) * anim).roundToInt()
-            context.roundRect(knobX, pillY + 1, knobX + 8, pillY + 9, 0xFFFFFFFF.toInt())
+            context.roundRect(knobX, pillY + 1, knobX + 8, pillY + 9, WHITE)
         }
 
         override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
@@ -370,26 +373,22 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         private val primary: Boolean, private val action: () -> Unit
     ) : ClickableWidget(x, y, w, 16, Text.literal(label)) {
 
+        private var glow = 0f
+
         override fun onClick(click: Click, doubled: Boolean) = action()
 
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-            val lit = isHovered || isFocused
+            glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
             if (primary) {
-                val shift = (sin(seconds() * 2f) + 1f) / 2f
-                val a = lerpColor(shift, ACCENT_A, ACCENT_B)
-                val b = lerpColor(shift, ACCENT_B, ACCENT_A)
-                for (i in 0 until width) {
-                    var c = lerpColor(i.toFloat() / width, a, b)
-                    if (!lit) c = lerpColor(0.35f, c, OPAQUE)
-                    context.fill(x + i, y + if (i == 0 || i == width - 1) 1 else 0,
-                        x + i + 1, y + height - if (i == 0 || i == width - 1) 1 else 0, c)
-                }
+                val dim = 0.3f * (1f - glow)
+                context.sweep(x + 1, y, x + width - 1, y + height,
+                    lerpColor(dim, ACCENT_A, OPAQUE), lerpColor(dim, ACCENT_B, OPAQUE))
             } else {
-                context.roundRect(x, y, x + width, y + height, if (lit) TRACK_HOVER else TRACK)
-                if (lit) context.drawStrokedRectangle(x, y, width, height, ACCENT_A)
+                context.roundRect(x, y, x + width, y + height, lerpColor(glow, TRACK, TRACK_HOVER))
+                if (glow > 0f) context.drawStrokedRectangle(x, y, width, height, alpha(ACCENT_MID, (255 * glow).toInt()))
             }
             context.drawCenteredTextWithShadow(textRenderer, label, x + width / 2, y + 4,
-                if (primary || lit) 0xFFFFFFFF.toInt() else TEXT)
+                if (primary) WHITE else lerpColor(glow, TEXT, WHITE))
         }
 
         override fun appendClickableNarrations(builder: NarrationMessageBuilder) {
