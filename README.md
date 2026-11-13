@@ -1,6 +1,7 @@
 # Slot Cycler
 
-A lightweight Fabric client mod (Minecraft 1.21.11).
+A lightweight Fabric mod (Minecraft 1.21.11). It works as a client-only mod, and can
+also be installed on the server to make the copy a real item.
 
 Press **`X`** to cycle an item between two hotbar slots, check for ghost items, and drop
 any surplus. Press **`Right Shift`** to open the settings screen.
@@ -15,6 +16,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 | **Keybinds** | `X` runs the cycle, `Right Shift` opens settings (both rebindable in Controls) |
 | **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
 | **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them, ending with a ghost copy so the item shows in both slots |
+| **Real copy** | When the server runs Slot Cycler too (or in single player), a ghost run ends with a real copy that exists on the server and the client. Host and operators only |
 | **Keep ghost visible** | The ghost copy is redrawn whenever the server clears it, until you press Clear ghosts |
 | **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
 | **Surplus drop** | If slot A ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
@@ -32,9 +34,9 @@ Settings are saved to `config/slotcycler.json`.
 4. Drop the jar into your `mods/` folder.
 5. Launch the game and press **`X`** in-game.
 
-Slot Cycler is **client-only**: every player who wants it installs it in their own game.
-Nothing goes in the server's files, and it works on servers that don't have it (a server
-that finds the jar in its `mods/` folder simply skips it).
+For **Real copy** on a multiplayer server, put the same jar (plus Fabric API and Fabric
+Language Kotlin) in the server's `mods/` folder as well. Single-player worlds need
+nothing extra.
 
 ---
 
@@ -85,7 +87,8 @@ slotcycler/
 ├── settings.gradle.kts
 ├── src/
 │   └── main/
-│       ├── kotlin/slotcycler/SlotCyclerMod.kt     # run logic
+│       ├── kotlin/slotcycler/SlotCyclerMod.kt     # run logic (client)
+│       ├── kotlin/slotcycler/SlotCyclerServer.kt  # real copy (server)
 │       ├── kotlin/slotcycler/Settings.kt          # saved options
 │       ├── kotlin/slotcycler/ConfigScreen.kt      # settings screen
 │       └── resources/fabric.mod.json              # mod metadata
@@ -105,6 +108,12 @@ per tick. With **Finish in slot B** on, it does one extra move so the stack ends
   sent, so the client and server disagree about where the stack is. The run then ends by
   putting a single client-only copy of the item in whichever of the two slots is empty,
   so the item shows in both.
+- **Real copy** needs the mod on the server, because only the server decides what is
+  really in an inventory. At the end of a ghost run the client sends a small
+  `slotcycler:make_real` packet instead of drawing a ghost. The server puts one copy of
+  the item in whichever of the two slots is empty and resends the inventory, so both
+  sides agree. Only the world's host and operators (level 2+) are allowed; anyone else
+  gets a message and no item. On a server without the mod the copy stays display-only.
 - **Keep ghost visible** redraws that copy whenever the server clears it (after a ghost
   check, or when you click it), until a real item takes the slot, you start a new run,
   or you press **Clear ghosts** in the settings screen. The copy is display-only: the

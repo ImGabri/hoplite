@@ -20,7 +20,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
 
     private companion object {
         const val PANEL_W = 392
-        const val PANEL_H = 222
+        const val PANEL_H = 244
         const val COL_W = 180
         const val ROW_H = 18
         const val ROW_PITCH = 22
@@ -98,6 +98,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         }
         toggle("Ghost clicks (copy in both)", { s.ghostClicks }, { s.ghostClicks = it })
         toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
+        toggle("Real copy (server mod)", { s.realCopy }, { s.realCopy = it })
         toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
@@ -205,7 +206,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
     /** A miniature hotbar showing the configured run in slow motion, plus totals. */
     private fun drawPreview(context: DrawContext) {
         val boxX = px + PANEL_W - 12 - COL_W
-        val boxY = py + 152
+        val boxY = py + 174
         context.roundRect(boxX, boxY, boxX + COL_W, boxY + 44, TRACK)
 
         val slot = 18

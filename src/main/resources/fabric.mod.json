@@ -12,6 +12,7 @@
     "sources": "https://github.com/ImGabri/slotcycler"
   },
   "entrypoints": {
+    "main": ["slotcycler.SlotCyclerServer"],
     "client": ["slotcycler.SlotCyclerMod"]
   },
   "mixins": [],
