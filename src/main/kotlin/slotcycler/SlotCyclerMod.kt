@@ -32,12 +32,12 @@ class SlotCyclerMod : ClientModInitializer {
         var runRequested = false
         var clearRequested = false
 
-        private const val CYAN = 0x35E0FF
+        const val CYAN = 0x35E0FF
         private const val VIOLET = 0xB65CFF
-        private const val GOOD = 0x5CFFA0
-        private const val BAD = 0xFF6B7A
-        private const val SOFT = 0xE8ECFF
-        private const val DIM = 0x8A90B0
+        const val GOOD = 0x5CFFA0
+        const val BAD = 0xFF6B7A
+        const val SOFT = 0xE8ECFF
+        const val DIM = 0x8A90B0
 
         private fun mix(t: Float, a: Int, b: Int): Int {
             fun ch(shift: Int): Int {
@@ -60,7 +60,7 @@ class SlotCyclerMod : ClientModInitializer {
         private fun tint(text: String, color: Int): MutableText =
             Text.literal(text).styled { it.withColor(color) }
 
-        private fun announce(player: ClientPlayerEntity, vararg parts: Pair<String, Int>) {
+        fun announce(player: ClientPlayerEntity, vararg parts: Pair<String, Int>) {
             val line = Text.empty()
                 .append(gradient("Slot Cycler", CYAN, VIOLET))
                 .append(Text.literal(" "))
@@ -99,6 +99,7 @@ class SlotCyclerMod : ClientModInitializer {
         KeyBindingHelper.registerKeyBinding(cycleKey)
         KeyBindingHelper.registerKeyBinding(configKey)
         ClientTickEvents.END_CLIENT_TICK.register(::onTick)
+        Qol.init()
     }
 
     private fun onTick(client: MinecraftClient) {
@@ -110,7 +111,7 @@ class SlotCyclerMod : ClientModInitializer {
 
         if (phase == Phase.IDLE) {
             maintainGhost(client.player)
-            if (openConfig && client.currentScreen == null) client.setScreen(ConfigScreen())
+            if (openConfig && client.currentScreen == null) client.setScreen(HubScreen())
             else if (pressed) start(client)
             return
         }

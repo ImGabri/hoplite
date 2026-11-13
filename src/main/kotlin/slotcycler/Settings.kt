@@ -21,6 +21,20 @@ class Settings {
     var endInB = false
     var itemMode: String? = ANY_ITEM
 
+    var tradeMax = true
+    var containerButtons = true
+    var armorHud = true
+    var itemTracker = true
+    var trackedItems: String? = DEFAULT_TRACKED
+    var infoHud = false
+    var effectTimers = true
+    var durabilityAlert = true
+    var fullbright = false
+    var deathCoords = true
+
+    fun trackedTerms(): List<String> =
+        (trackedItems ?: "").split(',').map { it.trim().lowercase().replace(' ', '_') }.filter { it.isNotEmpty() }
+
     fun clamp() {
         slotA = slotA.coerceIn(1, 9)
         slotB = slotB.coerceIn(1, 9)
@@ -30,6 +44,7 @@ class Settings {
         settleTicks = settleTicks.coerceIn(0, MAX_WAIT)
         verifyTicks = verifyTicks.coerceIn(2, MAX_WAIT)
         if (itemMode !in ITEM_MODES) itemMode = ANY_ITEM
+        if (trackedItems == null) trackedItems = DEFAULT_TRACKED
     }
 
     fun itemModeIndex(): Int = ITEM_MODES.indexOf(itemMode).coerceAtLeast(0)
@@ -52,6 +67,7 @@ class Settings {
         const val MAX_DELAY = 20
         const val MAX_WAIT = 40
         const val ANY_ITEM = "any_item"
+        const val DEFAULT_TRACKED = "scrap, totem, golden_apple, ender_pearl"
 
         val ITEM_MODES = listOf(
             ANY_ITEM, "gold_ingot", "iron_ingot", "copper_ingot",
@@ -70,7 +86,19 @@ class Settings {
                 .getOrNull()?.also { it.clamp() } ?: Settings()
 
         fun reset() {
-            current = Settings()
+            val old = current
+            current = Settings().apply {
+                tradeMax = old.tradeMax
+                containerButtons = old.containerButtons
+                armorHud = old.armorHud
+                itemTracker = old.itemTracker
+                trackedItems = old.trackedItems
+                infoHud = old.infoHud
+                effectTimers = old.effectTimers
+                durabilityAlert = old.durabilityAlert
+                fullbright = old.fullbright
+                deathCoords = old.deathCoords
+            }
             current.save()
         }
     }

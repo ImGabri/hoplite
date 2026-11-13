@@ -13,10 +13,31 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import net.minecraft.util.Util
+import slotcycler.Ui.OPAQUE
+import slotcycler.Ui.TRACK
+import slotcycler.Ui.TRACK_HOVER
+import slotcycler.Ui.TEXT
+import slotcycler.Ui.TEXT_DIM
+import slotcycler.Ui.ACCENT_A
+import slotcycler.Ui.ACCENT_B
+import slotcycler.Ui.ACCENT_MID
+import slotcycler.Ui.EDGE
+import slotcycler.Ui.WHITE
+import slotcycler.Ui.WARN
+import slotcycler.Ui.OK
+import slotcycler.Ui.TITLE
+import slotcycler.Ui.lerpColor
+import slotcycler.Ui.alpha
+import slotcycler.Ui.ease
+import slotcycler.Ui.pretty
+import slotcycler.Ui.sweep
+import slotcycler.Ui.panel
+import slotcycler.Ui.roundRect
+import slotcycler.Ui.row
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
+class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Slot Cycler")) {
 
     private companion object {
         const val PANEL_W = 392
@@ -25,60 +46,10 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         const val ROW_H = 18
         const val ROW_PITCH = 22
         const val ROWS_TOP = 44
-        const val SWEEP_PARTS = 12
-
-        const val OPAQUE = 0xFF000000.toInt()
-        const val PANEL_BG = 0xF00C0D16.toInt()
-        const val TRACK = 0xFF1B1E2E.toInt()
-        const val TRACK_HOVER = 0xFF252A40.toInt()
-        const val TEXT = 0xFFE8ECFF.toInt()
-        const val TEXT_DIM = 0xFF8A90B0.toInt()
-        const val ACCENT_A = 0xFF35E0FF.toInt()
-        const val ACCENT_B = 0xFFB65CFF.toInt()
-        const val ACCENT_MID = 0xFF769EFF.toInt()
-        const val EDGE = 0xFF2C3148.toInt()
-        const val WHITE = 0xFFFFFFFF.toInt()
-        const val TITLE = "S L O T   C Y C L E R"
-        const val WARN = 0xFFFF6B7A.toInt()
-        const val OK = 0xFF5CFFA0.toInt()
-
+        
         const val PREVIEW_SLOWDOWN = 4
         const val MS_PER_TICK = 50
 
-        fun lerpColor(t: Float, a: Int, b: Int): Int {
-            fun ch(shift: Int): Int {
-                val x = (a shr shift) and 0xFF
-                val y = (b shr shift) and 0xFF
-                return (x + (y - x) * t).roundToInt().coerceIn(0, 255) shl shift
-            }
-            return ch(24) or ch(16) or ch(8) or ch(0)
-        }
-
-        fun alpha(color: Int, a: Int): Int = (color and 0xFFFFFF) or (a.coerceIn(0, 255) shl 24)
-
-        fun ease(current: Float, target: Float, delta: Float): Float {
-            val next = current + (target - current) * (0.35f * delta).coerceAtMost(1f)
-            return if (abs(target - next) < 0.01f) target else next
-        }
-
-        fun pretty(id: String): String =
-            id.split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
-
-        fun DrawContext.sweep(x1: Int, y1: Int, x2: Int, y2: Int, from: Int, to: Int) {
-            val w = x2 - x1
-            if (w <= 0) return
-            val parts = minOf(SWEEP_PARTS, w)
-            for (i in 0 until parts) {
-                fill(x1 + w * i / parts, y1, x1 + w * (i + 1) / parts, y2,
-                    lerpColor((i + 0.5f) / parts, from, to))
-            }
-        }
-
-        fun DrawContext.roundRect(x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
-            fill(x1 + 1, y1, x2 - 1, y2, color)
-            fill(x1, y1 + 1, x1 + 1, y2 - 1, color)
-            fill(x2 - 1, y1 + 1, x2, y2 - 1, color)
-        }
     }
 
     private val s get() = Settings.current
@@ -142,14 +113,15 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         })
         addDrawableChild(FancyButton(px + PANEL_W - 12 - 70, by, 70, "Done", false) { close() })
         addDrawableChild(FancyButton(px + PANEL_W - 12 - 70 - 6 - 110, by, 110, "Save & Run", true) {
-            close()
+            s.save()
+            client?.setScreen(null)
             SlotCyclerMod.runRequested = true
         })
     }
 
     override fun close() {
         s.save()
-        super.close()
+        client?.setScreen(parent)
     }
 
     override fun shouldPause() = false
@@ -159,10 +131,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         context.fillGradient(0, 0, width, height,
             alpha(0x05060F, (0xB8 * fade).toInt()), alpha(0x0C0D16, (0xD8 * fade).toInt()))
 
-        context.roundRect(px - 2, py - 2, px + PANEL_W + 2, py + PANEL_H + 2, alpha(0, (0x30 * fade).toInt()))
-        context.roundRect(px - 1, py - 1, px + PANEL_W + 1, py + PANEL_H + 1, EDGE)
-        context.fill(px, py, px + PANEL_W, py + PANEL_H, PANEL_BG)
-        context.sweep(px, py, px + PANEL_W, py + 1, ACCENT_A, ACCENT_B)
+        context.panel(px, py, PANEL_W, PANEL_H, fade)
 
         val mid = px + PANEL_W / 2
         context.drawCenteredTextWithShadow(textRenderer, TITLE, mid, py + 10, TEXT)
@@ -265,7 +234,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
             val lit = isHovered || isFocused
             glow = ease(glow, if (lit) 1f else 0f, delta)
-            drawRow(context, x, y, width, height, glow)
+            context.row(x, y, width, height, glow)
 
             val fraction = (get() - min).toFloat() / (max - min)
             val span = width - 4
@@ -280,15 +249,6 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             val text = show(get())
             context.drawTextWithShadow(textRenderer, text, x + width - 5 - textRenderer.getWidth(text),
                 y + 2, TEXT)
-        }
-    }
-
-    private fun drawRow(context: DrawContext, x: Int, y: Int, w: Int, h: Int, glow: Float) {
-        context.roundRect(x, y, x + w, y + h, lerpColor(glow, TRACK, TRACK_HOVER))
-        if (glow > 0f) {
-            val bar = (h * glow).roundToInt()
-            val top = y + (h - bar) / 2
-            context.fill(x, top, x + 2, top + bar, alpha(ACCENT_MID, (255 * glow).toInt()))
         }
     }
 
@@ -314,7 +274,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
 
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
             glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
-            drawRow(context, x, y, width, height, glow)
+            context.row(x, y, width, height, glow)
             context.drawTextWithShadow(textRenderer, "Item filter", x + 6, y + 5, lerpColor(glow, TEXT_DIM, TEXT))
 
             val index = s.itemModeIndex()
@@ -351,7 +311,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
             anim = ease(anim, if (get()) 1f else 0f, delta)
             glow = ease(glow, if (isHovered || isFocused) 1f else 0f, delta)
-            drawRow(context, x, y, width, height, glow)
+            context.row(x, y, width, height, glow)
             context.drawTextWithShadow(textRenderer, label, x + 6, y + 5,
                 lerpColor(maxOf(glow, anim * 0.6f), TEXT_DIM, TEXT))
 
