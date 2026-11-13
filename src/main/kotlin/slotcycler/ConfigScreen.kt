@@ -98,6 +98,7 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         }
         toggle("Ghost clicks (display copy)", { s.ghostClicks }, { s.ghostClicks = it })
         toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
+        toggle("Real copy (single/creative)", { s.realCopy }, { s.realCopy = it })
         toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })

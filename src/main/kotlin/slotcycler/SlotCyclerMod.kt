@@ -11,6 +11,7 @@ import net.minecraft.client.option.KeyBinding
 import net.minecraft.client.util.InputUtil
 import net.minecraft.item.ItemStack
 import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket
+import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.screen.sync.ItemStackHash
 import net.minecraft.text.Text
@@ -22,6 +23,8 @@ import org.lwjgl.glfw.GLFW
  *
  * Press the run key to move the stack in hotbar slot A to slot B and back.
  * A ghost run can end with a display-only copy of the item in both slots.
+ * In singleplayer or multiplayer creative mode, [Settings.realCopy] instead
+ * creates a server-authoritative copy without requiring a server-side mod.
  * Afterwards the mod can ask the server for the real inventory to count ghost
  * items (items the client shows but the server does not have), and drop
  * anything slot A holds beyond what it started with.
@@ -63,8 +66,13 @@ class SlotCyclerMod : ClientModInitializer {
     private var step = 0
     private var wait = 0
     private var startCount = 0
+    /** Server-authoritative stack and target state captured before local ghost clicks. */
+    private var startStack: ItemStack = ItemStack.EMPTY
+    private var targetWasEmpty = false
     private var dropped = 0
     private var ghosts = 0
+    /** Whether this run requested a real copy through an authorized vanilla mechanism. */
+    private var realCopy = false
     /** The client's view of every slot (cursor last) taken just before a ghost check. */
     private var snapshot: List<ItemStack> = emptyList()
     /** The ghost copy being kept on screen: inventory index and what to show there. */
@@ -103,7 +111,7 @@ class SlotCyclerMod : ClientModInitializer {
         }
 
         when (phase) {
-            Phase.CLICKING -> clickTick(player, manager)
+            Phase.CLICKING -> clickTick(client, player, manager)
             Phase.SETTLING -> {
                 if (dropsAsItGoes()) dropSurplus(player, manager)
                 if (wait-- <= 0) {
@@ -167,13 +175,20 @@ class SlotCyclerMod : ClientModInitializer {
         step = 0
         wait = 0
         startCount = count
+        startStack = player.inventory.getStack(s.slotA - 1).copy()
+        targetWasEmpty = player.inventory.getStack(s.slotB - 1).isEmpty
         dropped = 0
         ghosts = 0
         keptGhost = null
+        realCopy = false
         phase = Phase.CLICKING
     }
 
-    private fun clickTick(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
+    private fun clickTick(
+        client: MinecraftClient,
+        player: ClientPlayerEntity,
+        manager: ClientPlayerInteractionManager
+    ) {
         if (wait > 0) {
             wait--
             return
@@ -197,12 +212,53 @@ class SlotCyclerMod : ClientModInitializer {
         }
 
         if (step >= totalSteps) {
-            if (s.ghostClicks) addGhostCopy(player)
+            if (s.ghostClicks) {
+                realCopy = makeRealCopy(client, player)
+                if (!realCopy) addGhostCopy(player)
+            }
             phase = Phase.SETTLING
             wait = s.settleTicks
         } else {
             wait = s.burstDelay
         }
+    }
+
+    /**
+     * Create a real copy using only mechanisms available without a server mod.
+     * Singleplayer uses its integrated server; a remote server accepts creative
+     * inventory updates only while this player is actually in creative mode.
+     * Returns false when only a display copy is possible.
+     */
+    private fun makeRealCopy(client: MinecraftClient, player: ClientPlayerEntity): Boolean {
+        if (!s.realCopy || !targetWasEmpty || startStack.isEmpty) return false
+
+        val a = s.slotA - 1
+        val b = s.slotB - 1
+        val expected = startStack.copy()
+        val copy = expected.copyWithCount(1)
+        val server = client.server
+        if (server != null) {
+            val playerId = player.uuid
+            server.execute {
+                val serverPlayer = server.playerManager.getPlayer(playerId) ?: return@execute
+                val inventory = serverPlayer.inventory
+                val source = inventory.getStack(a)
+                // Do not overwrite anything if the real inventory changed mid-run.
+                if (source.count == expected.count &&
+                    ItemStack.areItemsAndComponentsEqual(source, expected) &&
+                    inventory.getStack(b).isEmpty
+                ) {
+                    inventory.setStack(b, copy)
+                    serverPlayer.playerScreenHandler.syncState()
+                }
+            }
+            return true
+        }
+
+        if (!player.abilities.creativeMode) return false
+        // Creative packets use PlayerScreenHandler ids, where hotbar slots are 36-44.
+        player.networkHandler.sendPacket(CreativeInventoryActionC2SPacket(HOTBAR_START + b, copy))
+        return true
     }
 
     /**
@@ -286,12 +342,15 @@ class SlotCyclerMod : ClientModInitializer {
 
     private fun finish(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
         if (s.dropSurplus) dropSurplus(player, manager)
-        // The ghost check's resync wiped the ghost copy; put it back so it stays.
-        if (s.ghostClicks && s.ghostCheck) addGhostCopy(player)
+        // A display copy needs restoring after the server's ghost-check resync.
+        if (s.ghostClicks && s.ghostCheck && !realCopy) addGhostCopy(player)
         phase = Phase.IDLE
 
         val parts = mutableListOf<String>()
         if (s.ghostCheck) parts += if (ghosts > 0) "$ghosts ghost item(s) found" else "no ghost items"
+        if (s.ghostClicks && s.realCopy) {
+            parts += if (realCopy) "real copy requested" else "real copy unavailable, using display copy"
+        }
         if (s.dropSurplus) parts += if (dropped > 0) "dropped $dropped extra" else "no extra items"
         val summary = if (parts.isEmpty()) "" else ": " + parts.joinToString(", ")
         player.sendMessage(Text.literal("[SlotCycler] Done$summary"), true)

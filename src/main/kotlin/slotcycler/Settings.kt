@@ -28,6 +28,11 @@ class Settings {
     var ghostClicks = false
     /** Redraw the ghost copy whenever the server clears it, until told to stop. */
     var keepGhost = true
+    /**
+     * Make the copy a real item through the integrated server in singleplayer,
+     * or a vanilla creative-inventory packet in multiplayer creative mode.
+     */
+    var realCopy = true
     /** After the run, ask the server for the real inventory and count ghost items. */
     var ghostCheck = true
     /** Drop anything in slot A beyond what it started with. */
