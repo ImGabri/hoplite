@@ -96,10 +96,10 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
             addDrawableChild(FancyToggle(right, y, label, get, set))
             y += ROW_PITCH
         }
-        toggle("Ghost clicks (display copy)", { s.ghostClicks }, { s.ghostClicks = it })
+        toggle("Ghost clicks (client-only, display-only)", { s.ghostClicks }, { s.ghostClicks = it })
         toggle("Keep ghost visible", { s.keepGhost }, { s.keepGhost = it })
-        toggle("Real copy (single/creative)", { s.realCopy }, { s.realCopy = it })
-        toggle("Check for ghost items", { s.ghostCheck }, { s.ghostCheck = it })
+        toggle("Real copy (singleplayer/creative only)", { s.realCopy }, { s.realCopy = it })
+        toggle("Check for ghost items (server resync)", { s.ghostCheck }, { s.ghostCheck = it })
         toggle("Drop surplus (Q)", { s.dropSurplus }, { s.dropSurplus = it })
         toggle("Finish in slot B", { s.endInB }, { s.endInB = it })
 
@@ -196,6 +196,10 @@ class ConfigScreen : Screen(Text.literal("Slot Cycler")) {
         context.drawCenteredTextWithShadow(
             textRenderer, "ghost items · surplus drop · timing", px + PANEL_W / 2, py + 23, TEXT_DIM
         )
+        val modeLine = if (s.ghostClicks) "Mode: Ghost clicks — client-only, display-only on remote servers"
+            else "Mode: Real clicks — server-authoritative, works on any server without rights"
+        context.drawCenteredTextWithShadow(textRenderer, modeLine, px + PANEL_W / 2, py + 35,
+            if (s.ghostClicks) WARN else OK)
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

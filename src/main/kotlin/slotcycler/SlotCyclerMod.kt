@@ -186,6 +186,8 @@ class SlotCyclerMod : ClientModInitializer {
         keptGhost = null
         realCopy = false
         phase = Phase.CLICKING
+        val mode = if (s.ghostClicks) "ghost" else "real"
+        player.sendMessage(Text.literal("[SlotCycler] $mode-click run started (${s.totalClicks()} clicks)"), true)
     }
 
     private fun clickTick(

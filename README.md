@@ -18,6 +18,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 | **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
 | **Client-only** | Only the client installs the mod; there is no server entrypoint or custom networking channel |
 | **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them, ending with a display-only copy so the item shows in both slots |
+| **Real clicks** | Ordinary server-authoritative slot clicks — works on any server without installation or rights; surplus is server-confirmed |
 | **Real copy** | Creates a genuine server-side copy in singleplayer (any game mode) or multiplayer creative mode; ghost checking confirms the result from the server inventory |
 | **Keep ghost visible** | The display copy is redrawn whenever the server clears it, until you press Clear ghosts |
 | **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
@@ -52,6 +53,14 @@ Settings are saved to `config/slotcycler.json`.
 >
 > **Display copies are not real.** Ghost clicks keep everything client-side, so on a remote
 > survival server they only change what you see locally. Do not rely on them as items.
+
+## What's new in 2.2.0
+
+- **Clear mode indication:** The settings screen shows whether the next run will use ghost clicks (client-only, display-only) or real clicks (server-authoritative, works on any server).
+- **Start-up status:** Each run announces its mode and click count in chat (e.g. `[SlotCycler] real-click run started (12 clicks)`).
+- **Server-confirmed surplus reporting:** Real-click runs report `server confirmed no extra items` when the backend didn't duplicate anything, or `dropped N extra` when duplication was detected and removed.
+- **Honest real-copy status:** Reports `real copy confirmed` only after the server's post-run resync contains both stacks; otherwise reports `not confirmed, using display copy`.
+- **Ghost copy safety:** The display fallback never overwrites an occupied slot, so real items are never destroyed by a ghost restore.
 
 ---
 
