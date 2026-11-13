@@ -32,6 +32,10 @@ Settings are saved to `config/slotcycler.json`.
 4. Drop the jar into your `mods/` folder.
 5. Launch the game and press **`X`** in-game.
 
+Slot Cycler is **client-only**: every player who wants it installs it in their own game.
+Nothing goes in the server's files, and it works on servers that don't have it (a server
+that finds the jar in its `mods/` folder simply skips it).
+
 ---
 
 ## Building from source
