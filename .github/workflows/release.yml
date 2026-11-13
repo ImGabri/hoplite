@@ -1,8 +1,5 @@
 name: Release
 
-# Builds the mod and publishes a GitHub release for the version in
-# build.gradle.kts. Runs when main changes (or manually) and does nothing if
-# that version has already been released.
 on:
   push:
     branches: [main]
@@ -45,7 +42,6 @@ jobs:
         if: steps.version.outputs.released == 'false'
         run: |
           version=${{ steps.version.outputs.version }}
-          # Also upload under a fixed name so the "latest" download link never changes.
           cp "build/libs/slotcycler-$version.jar" slotcycler.jar
           gh release create "v$version" "build/libs/slotcycler-$version.jar" slotcycler.jar \
             --target "$GITHUB_SHA" \

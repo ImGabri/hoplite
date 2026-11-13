@@ -14,41 +14,62 @@ import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket
 import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.screen.sync.ItemStackHash
+import net.minecraft.registry.Registries
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 
-/**
- * Slot Cycler.
- *
- * Press the run key to move the stack in hotbar slot A to slot B and back.
- * A ghost run can end with a display-only copy of the item in both slots.
- * In singleplayer or multiplayer creative mode, [Settings.realCopy] can create
- * a server-authoritative copy without a server-side mod. With ghost checking
- * enabled, the copy is confirmed from the inventory returned by the server.
- * Afterwards the mod can ask the server for the real inventory to count ghost
- * items (items the client shows but the server does not have), and drop
- * anything slot A holds beyond what it started with.
- *
- * Everything is driven by [Settings] and runs on the client thread as a small
- * tick state machine. No Slot Cycler code or custom packet receiver is needed
- * on the server.
- */
 class SlotCyclerMod : ClientModInitializer {
 
     companion object {
         const val MOD_ID = "slotcycler"
         private const val MOUSE_BUTTON_LEFT = 0
-        /** Screen-handler slot id of hotbar slot 1. */
         private const val HOTBAR_START = 36
         private const val MAX_DROPS_PER_TICK = 64
-        /** A click on this slot id is accepted by the server and does nothing. */
         private const val NO_OP_SLOT: Short = -1
 
-        /** Set by the settings screen's "Run" button; consumed next tick. */
         var runRequested = false
-        /** Set by the settings screen's "Clear ghosts" button; consumed next tick. */
         var clearRequested = false
+
+        private const val CYAN = 0x35E0FF
+        private const val VIOLET = 0xB65CFF
+        private const val GOOD = 0x5CFFA0
+        private const val BAD = 0xFF6B7A
+        private const val SOFT = 0xE8ECFF
+        private const val DIM = 0x8A90B0
+
+        private fun mix(t: Float, a: Int, b: Int): Int {
+            fun ch(shift: Int): Int {
+                val x = (a shr shift) and 0xFF
+                val y = (b shr shift) and 0xFF
+                return (x + (y - x) * t).toInt().coerceIn(0, 255) shl shift
+            }
+            return ch(16) or ch(8) or ch(0)
+        }
+
+        private fun gradient(text: String, from: Int, to: Int): MutableText {
+            val out = Text.empty()
+            text.forEachIndexed { i, c ->
+                val t = if (text.length > 1) i.toFloat() / (text.length - 1) else 0f
+                out.append(Text.literal(c.toString()).styled { it.withColor(mix(t, from, to)).withBold(true) })
+            }
+            return out
+        }
+
+        private fun tint(text: String, color: Int): MutableText =
+            Text.literal(text).styled { it.withColor(color) }
+
+        private fun announce(player: ClientPlayerEntity, vararg parts: Pair<String, Int>) {
+            val line = Text.empty()
+                .append(gradient("Slot Cycler", CYAN, VIOLET))
+                .append(Text.literal(" "))
+            parts.forEachIndexed { i, (text, color) ->
+                line.append(tint(if (i == 0) "\u00BB " else " \u00B7 ", DIM))
+                line.append(tint(text, color))
+            }
+            player.sendMessage(line, true)
+        }
     }
 
     private enum class Phase { IDLE, CLICKING, SETTLING, VERIFYING }
@@ -60,23 +81,18 @@ class SlotCyclerMod : ClientModInitializer {
         KeyBinding("key.$MOD_ID.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, category)
 
     private var phase = Phase.IDLE
-    /** Settings captured when the run started, so edits mid-run can't break it. */
     private var s = Settings.current
     private var sequence = IntArray(4)
     private var totalSteps = 0
     private var step = 0
     private var wait = 0
     private var startCount = 0
-    /** Server-authoritative stack and target state captured before local ghost clicks. */
     private var startStack: ItemStack = ItemStack.EMPTY
     private var targetWasEmpty = false
     private var dropped = 0
     private var ghosts = 0
-    /** Whether this run requested a real copy through an authorized vanilla mechanism. */
     private var realCopy = false
-    /** The client's view of every slot (cursor last) taken just before a ghost check. */
     private var snapshot: List<ItemStack> = emptyList()
-    /** The ghost copy being kept on screen: inventory index and what to show there. */
     private var keptGhost: Pair<Int, ItemStack>? = null
 
     override fun onInitializeClient() {
@@ -86,7 +102,6 @@ class SlotCyclerMod : ClientModInitializer {
     }
 
     private fun onTick(client: MinecraftClient) {
-        // Always drain presses so ones made mid-run don't queue up a re-run.
         var pressed = runRequested
         runRequested = false
         while (cycleKey.wasPressed()) pressed = true
@@ -102,12 +117,11 @@ class SlotCyclerMod : ClientModInitializer {
 
         val player = client.player
         val manager = client.interactionManager
-        // Left the world or opened a container: stop rather than click the wrong slots.
         if (player == null || manager == null ||
             player.currentScreenHandler !== player.playerScreenHandler
         ) {
             phase = Phase.IDLE
-            player?.sendMessage(Text.literal("[SlotCycler] Cancelled"), true)
+            player?.let { announce(it, "Cancelled" to BAD) }
             return
         }
 
@@ -121,8 +135,6 @@ class SlotCyclerMod : ClientModInitializer {
             }
             Phase.VERIFYING -> if (wait-- <= 0) {
                 ghosts = countGhosts(player)
-                // A sent request is not proof. Only the inventory returned by the
-                // server can confirm that both the source and the copy really exist.
                 if (s.ghostClicks && realCopy) realCopy = hasRealCopy(player)
                 finish(player, manager)
             }
@@ -130,11 +142,6 @@ class SlotCyclerMod : ClientModInitializer {
         }
     }
 
-    /**
-     * While idle, keep the ghost copy on screen: the server empties its slot
-     * whenever it resyncs (for example after the ghost is clicked), so put it
-     * back. Stop once a real item takes the slot or the player leaves.
-     */
     private fun maintainGhost(player: ClientPlayerEntity?) {
         val clear = clearRequested
         clearRequested = false
@@ -145,7 +152,6 @@ class SlotCyclerMod : ClientModInitializer {
         }
         if (clear || !Settings.current.keepGhost) {
             keptGhost = null
-            // Only the ghost itself is removed; a real item in the slot is left alone.
             if (player.currentScreenHandler === player.playerScreenHandler) requestResync(player)
             return
         }
@@ -162,18 +168,23 @@ class SlotCyclerMod : ClientModInitializer {
 
         s = Settings.current
         if (s.slotA == s.slotB) {
-            player.sendMessage(Text.literal("[SlotCycler] Slot A and slot B are the same"), true)
+            announce(player, "Slot A and slot B are the same" to BAD)
             return
         }
         val count = watchedCount(player)
         if (count == 0) {
-            player.sendMessage(Text.literal("[SlotCycler] Slot ${s.slotA} is empty"), true)
+            announce(player, "Slot ${s.slotA} is empty" to BAD)
+            return
+        }
+        val itemMode = s.itemMode ?: Settings.ANY_ITEM
+        val heldId = Registries.ITEM.getId(player.inventory.getStack(s.slotA - 1).item).path
+        if (itemMode != Settings.ANY_ITEM && heldId != itemMode) {
+            announce(player, "Slot ${s.slotA} must hold $itemMode" to BAD, "found $heldId" to DIM)
             return
         }
 
         val a = HOTBAR_START + s.slotA - 1
         val b = HOTBAR_START + s.slotB - 1
-        // Pick up A, place in B, pick up B, place back in A.
         sequence = intArrayOf(a, b, b, a)
         totalSteps = s.totalClicks()
         step = 0
@@ -186,8 +197,12 @@ class SlotCyclerMod : ClientModInitializer {
         keptGhost = null
         realCopy = false
         phase = Phase.CLICKING
-        val mode = if (s.goldIngotMode) "gold_ingot" else s.customItemName.let { it.isNotBlank() ? it : "any_item" }
-        player.sendMessage(Text.literal("[SlotCycler] $mode mode started (${s.totalClicks()} clicks)"), true)
+        announce(
+            player,
+            (if (s.ghostClicks) "Ghost run" else "Real run") to (if (s.ghostClicks) VIOLET else GOOD),
+            "$totalSteps clicks" to SOFT,
+            heldId to DIM
+        )
     }
 
     private fun clickTick(
@@ -199,13 +214,11 @@ class SlotCyclerMod : ClientModInitializer {
             wait--
             return
         }
-        // The stack is back in slot A at every cycle boundary; check it there.
         if (step % sequence.size == 0 && dropsAsItGoes()) dropSurplus(player, manager)
 
         repeat(minOf(s.clicksPerTick, totalSteps - step)) {
             val slot = sequence[step % sequence.size]
             if (s.ghostClicks) {
-                // Client only: the server is never told, so the result is a ghost.
                 player.playerScreenHandler
                     .onSlotClick(slot, MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, player)
             } else {
@@ -229,14 +242,6 @@ class SlotCyclerMod : ClientModInitializer {
         }
     }
 
-    /**
-     * Try to create a real copy using only vanilla mechanisms, without a server mod.
-     * Singleplayer uses its integrated server. Multiplayer uses a creative-inventory
-     * packet, which vanilla remote servers accept only in creative mode.
-     *
-     * The return value is whether a real copy is expected, not confirmation that the
-     * server accepted it. [hasRealCopy] confirms it after the ghost-check resync.
-     */
     private fun makeRealCopy(client: MinecraftClient, player: ClientPlayerEntity): Boolean {
         if (!s.realCopy || !targetWasEmpty || startStack.isEmpty) return false
 
@@ -251,7 +256,6 @@ class SlotCyclerMod : ClientModInitializer {
                 val serverPlayer = server.playerManager.getPlayer(playerId) ?: return@execute
                 val inventory = serverPlayer.inventory
                 val source = inventory.getStack(a)
-                // Do not overwrite anything if the real inventory changed mid-run.
                 if (source.count == expected.count &&
                     ItemStack.areItemsAndComponentsEqual(source, expected) &&
                     inventory.getStack(b).isEmpty
@@ -263,15 +267,11 @@ class SlotCyclerMod : ClientModInitializer {
             return true
         }
 
-        // Vanilla remote servers reject this packet outside creative mode. Do not
-        // send a known-invalid request or present the resulting ghost as a real item.
         if (!player.abilities.creativeMode) return false
-        // Creative packets use PlayerScreenHandler ids, where hotbar slots are 36-44.
         player.networkHandler.sendPacket(CreativeInventoryActionC2SPacket(HOTBAR_START + b, copy))
         return true
     }
 
-    /** Both stacks after a successful copy, checked against the post-resync inventory. */
     private fun hasRealCopy(player: ClientPlayerEntity): Boolean {
         val inventory = player.inventory
         val source = inventory.getStack(s.slotA - 1)
@@ -281,16 +281,10 @@ class SlotCyclerMod : ClientModInitializer {
             copy.count == 1 && ItemStack.areItemsAndComponentsEqual(copy, startStack)
     }
 
-    /**
-     * Ghost runs end with the item showing in both slots: whichever of A and B
-     * is empty gets a single client-only copy of the other's item.
-     */
     private fun addGhostCopy(player: ClientPlayerEntity) {
         val inventory = player.inventory
         val a = s.slotA - 1
         val b = s.slotB - 1
-        // Never overwrite a real item if both slots were filled while waiting for
-        // the server. In that case there is no empty destination for a ghost.
         if (!inventory.getStack(a).isEmpty && !inventory.getStack(b).isEmpty) {
             keptGhost = null
             return
@@ -303,17 +297,11 @@ class SlotCyclerMod : ClientModInitializer {
         keptGhost = if (s.keepGhost) to to copy.copy() else null
     }
 
-    /**
-     * Surplus is dropped during the run only when the client's counts can be
-     * trusted as they are. With ghost clicks or a pending ghost check, wait
-     * until the end instead.
-     */
     private fun dropsAsItGoes() = s.dropSurplus && !s.ghostClicks && !s.ghostCheck
 
     private fun dropSurplus(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
         val surplus = (watchedCount(player) - startCount).coerceAtMost(MAX_DROPS_PER_TICK)
         repeat(surplus) {
-            // THROW with button 0 drops one item from the slot, like pressing Q.
             manager.clickSlot(
                 player.playerScreenHandler.syncId, HOTBAR_START + s.slotA - 1,
                 MOUSE_BUTTON_LEFT, SlotActionType.THROW, player
@@ -322,12 +310,6 @@ class SlotCyclerMod : ClientModInitializer {
         if (surplus > 0) dropped += surplus
     }
 
-    /**
-     * Remember what the client believes, then ask the server for the truth.
-     * [requestResync] sends a do-nothing click carrying a deliberately wrong
-     * revision number; the server answers a revision mismatch by resending the
-     * whole inventory, which overwrites any ghosts.
-     */
     private fun beginGhostCheck(player: ClientPlayerEntity) {
         val handler = player.playerScreenHandler
         snapshot = handler.slots.map { it.stack.copy() } + handler.cursorStack.copy()
@@ -347,7 +329,6 @@ class SlotCyclerMod : ClientModInitializer {
         )
     }
 
-    /** Items the client had in [snapshot] that the server's inventory does not. */
     private fun countGhosts(player: ClientPlayerEntity): Int {
         val handler = player.playerScreenHandler
         val now = handler.slots.map { it.stack } + handler.cursorStack
@@ -368,28 +349,28 @@ class SlotCyclerMod : ClientModInitializer {
 
     private fun finish(player: ClientPlayerEntity, manager: ClientPlayerInteractionManager) {
         if (s.dropSurplus) dropSurplus(player, manager)
-        // A display copy needs restoring after the server's ghost-check resync.
         if (s.ghostClicks && s.ghostCheck && !realCopy) addGhostCopy(player)
         phase = Phase.IDLE
 
-        val parts = mutableListOf<String>()
-        if (s.ghostCheck) parts += if (ghosts > 0) "$ghosts ghost item(s) found" else "no ghost items"
+        val parts = mutableListOf<Pair<String, Int>>("Done" to GOOD)
+        if (s.ghostCheck) {
+            parts += if (ghosts > 0) "$ghosts ghost item(s) found" to BAD else "no ghost items" to SOFT
+        }
         if (s.ghostClicks && s.realCopy) {
             parts += when {
-                realCopy && s.ghostCheck -> "real copy confirmed"
-                realCopy -> "real copy requested (not verified)"
-                else -> "real copy not confirmed, using display copy"
+                realCopy && s.ghostCheck -> "real copy confirmed" to GOOD
+                realCopy -> "real copy requested (not verified)" to SOFT
+                else -> "real copy not confirmed, using display copy" to VIOLET
             }
         }
         if (s.dropSurplus) {
             parts += when {
-                dropped > 0 -> "dropped $dropped extra"
-                !s.ghostClicks && s.ghostCheck -> "server confirmed no extra items"
-                else -> "no extra items"
+                dropped > 0 -> "dropped $dropped extra" to CYAN
+                !s.ghostClicks && s.ghostCheck -> "server confirmed no extra items" to SOFT
+                else -> "no extra items" to SOFT
             }
         }
-        val summary = if (parts.isEmpty()) "" else ": " + parts.joinToString(", ")
-        player.sendMessage(Text.literal("[SlotCycler] Done$summary"), true)
+        announce(player, *parts.toTypedArray())
     }
 
     private fun watchedCount(player: ClientPlayerEntity): Int =
