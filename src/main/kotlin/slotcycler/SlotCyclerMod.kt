@@ -23,8 +23,9 @@ import org.lwjgl.glfw.GLFW
  *
  * Press the run key to move the stack in hotbar slot A to slot B and back.
  * A ghost run can end with a display-only copy of the item in both slots.
- * In singleplayer or multiplayer creative mode, [Settings.realCopy] instead
- * creates a server-authoritative copy without requiring a server-side mod.
+ * In singleplayer or multiplayer creative mode, [Settings.realCopy] can create
+ * a server-authoritative copy without a server-side mod. With ghost checking
+ * enabled, the copy is confirmed from the inventory returned by the server.
  * Afterwards the mod can ask the server for the real inventory to count ghost
  * items (items the client shows but the server does not have), and drop
  * anything slot A holds beyond what it started with.
@@ -120,6 +121,9 @@ class SlotCyclerMod : ClientModInitializer {
             }
             Phase.VERIFYING -> if (wait-- <= 0) {
                 ghosts = countGhosts(player)
+                // A sent request is not proof. Only the inventory returned by the
+                // server can confirm that both the source and the copy really exist.
+                if (s.ghostClicks && realCopy) realCopy = hasRealCopy(player)
                 finish(player, manager)
             }
             Phase.IDLE -> {}
@@ -224,10 +228,12 @@ class SlotCyclerMod : ClientModInitializer {
     }
 
     /**
-     * Create a real copy using only mechanisms available without a server mod.
-     * Singleplayer uses its integrated server; a remote server accepts creative
-     * inventory updates only while this player is actually in creative mode.
-     * Returns false when only a display copy is possible.
+     * Try to create a real copy using only vanilla mechanisms, without a server mod.
+     * Singleplayer uses its integrated server. Multiplayer uses a creative-inventory
+     * packet, which vanilla remote servers accept only in creative mode.
+     *
+     * The return value is whether a real copy is expected, not confirmation that the
+     * server accepted it. [hasRealCopy] confirms it after the ghost-check resync.
      */
     private fun makeRealCopy(client: MinecraftClient, player: ClientPlayerEntity): Boolean {
         if (!s.realCopy || !targetWasEmpty || startStack.isEmpty) return false
@@ -255,10 +261,22 @@ class SlotCyclerMod : ClientModInitializer {
             return true
         }
 
+        // Vanilla remote servers reject this packet outside creative mode. Do not
+        // send a known-invalid request or present the resulting ghost as a real item.
         if (!player.abilities.creativeMode) return false
         // Creative packets use PlayerScreenHandler ids, where hotbar slots are 36-44.
         player.networkHandler.sendPacket(CreativeInventoryActionC2SPacket(HOTBAR_START + b, copy))
         return true
+    }
+
+    /** Both stacks after a successful copy, checked against the post-resync inventory. */
+    private fun hasRealCopy(player: ClientPlayerEntity): Boolean {
+        val inventory = player.inventory
+        val source = inventory.getStack(s.slotA - 1)
+        val copy = inventory.getStack(s.slotB - 1)
+        return source.count == startStack.count &&
+            ItemStack.areItemsAndComponentsEqual(source, startStack) &&
+            copy.count == 1 && ItemStack.areItemsAndComponentsEqual(copy, startStack)
     }
 
     /**
@@ -269,6 +287,12 @@ class SlotCyclerMod : ClientModInitializer {
         val inventory = player.inventory
         val a = s.slotA - 1
         val b = s.slotB - 1
+        // Never overwrite a real item if both slots were filled while waiting for
+        // the server. In that case there is no empty destination for a ghost.
+        if (!inventory.getStack(a).isEmpty && !inventory.getStack(b).isEmpty) {
+            keptGhost = null
+            return
+        }
         val (from, to) = if (inventory.getStack(a).isEmpty) b to a else a to b
         val source = inventory.getStack(from)
         if (source.isEmpty) return
@@ -349,9 +373,19 @@ class SlotCyclerMod : ClientModInitializer {
         val parts = mutableListOf<String>()
         if (s.ghostCheck) parts += if (ghosts > 0) "$ghosts ghost item(s) found" else "no ghost items"
         if (s.ghostClicks && s.realCopy) {
-            parts += if (realCopy) "real copy requested" else "real copy unavailable, using display copy"
+            parts += when {
+                realCopy && s.ghostCheck -> "real copy confirmed"
+                realCopy -> "real copy requested (not verified)"
+                else -> "real copy not confirmed, using display copy"
+            }
         }
-        if (s.dropSurplus) parts += if (dropped > 0) "dropped $dropped extra" else "no extra items"
+        if (s.dropSurplus) {
+            parts += when {
+                dropped > 0 -> "dropped $dropped extra"
+                !s.ghostClicks && s.ghostCheck -> "server confirmed no extra items"
+                else -> "no extra items"
+            }
+        }
         val summary = if (parts.isEmpty()) "" else ": " + parts.joinToString(", ")
         player.sendMessage(Text.literal("[SlotCycler] Done$summary"), true)
     }

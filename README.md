@@ -18,7 +18,7 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 | **Settings screen** | Sliders and switches for slots, cycles, clicks per tick, delays and wait times, with a live preview of the run |
 | **Client-only** | Only the client installs the mod; there is no server entrypoint or custom networking channel |
 | **Ghost clicks** | Optionally apply the clicks on the client only, so the server never sees them, ending with a display-only copy so the item shows in both slots |
-| **Real copy** | Creates a genuine server-side copy in singleplayer (any game mode) or multiplayer creative mode, using only the integrated server or vanilla creative packets; no server mod is needed |
+| **Real copy** | Creates a genuine server-side copy in singleplayer (any game mode) or multiplayer creative mode; ghost checking confirms the result from the server inventory |
 | **Keep ghost visible** | The display copy is redrawn whenever the server clears it, until you press Clear ghosts |
 | **Ghost check** | After a run, asks the server for the real inventory and reports how many items were ghosts |
 | **Surplus drop** | If slot A ends up with more items than it started with, the extras are dropped (like pressing `Q`) |
@@ -26,16 +26,32 @@ Built with [Fabric](https://fabricmc.net/) and [Kotlin](https://kotlinlang.org/)
 
 Settings are saved to `config/slotcycler.json`.
 
-> **Real copy availability.** Enable **Ghost clicks** and **Real copy**, and leave slot B
-> empty. In singleplayer, the mod asks the integrated server to create the copy after
-> validating that the real inventory has not changed. On a multiplayer server, vanilla
-> Minecraft accepts the equivalent creative-inventory packet only in **creative mode**.
-> In survival or adventure mode on a remote server, the mod falls back to a display copy.
+> **Real copy availability.** Enable **Ghost clicks**, **Real copy**, and **Check for ghost
+> items**, and leave slot B empty. In singleplayer, the mod asks the integrated server to
+> create the copy after validating that the real inventory has not changed. On a multiplayer
+> server, vanilla Minecraft accepts the equivalent creative-inventory packet only in
+> **creative mode**. The post-run resync must contain both stacks before the mod reports
+> **real copy confirmed**. In survival or adventure mode on a remote server, the mod falls
+> back to a display copy instead of sending a request the vanilla server will reject.
 >
 > **Display-only means display-only.** Minecraft servers own their inventories. No
-> client-only mod can create a real item in survival on an arbitrary unmodified remote
-> server. A display copy cannot be used, dropped, traded, or stored as a real item. Normal
+> client-only mod can force an arbitrary unmodified remote server to create a real item in
+> survival. A display copy cannot be used, dropped, traded, or stored as a real item. Normal
 > (non-ghost) slot cycling still uses real server-authoritative inventory movements.
+>
+> **Hoplite / Velocity servers.** Velocity forwards packets to the backend; plugin names such
+> as `hoplitenucleus`, `hoplitecosmetics`, and `luckperms` do not give this client permission
+> to modify the backend inventory, and Velocity itself does not run the world's inventory.
+>
+> **The no-rights path.** Turn **Ghost clicks** **off** and leave **Check for ghost items**
+> and **Drop surplus** on. Every click is then sent as a real server-authoritative slot click,
+> so nothing is hidden from the backend. The post-run resync asks the server for the truth,
+> and any surplus it reports is **server-confirmed**. **Server confirmed no extra items** means
+> the backend did not duplicate anything. Only a vulnerable backend can produce a surplus; the
+> mod cannot create one on a patched server, and it never pretends otherwise.
+>
+> **Display copies are not real.** Ghost clicks keep everything client-side, so on a remote
+> survival server they only change what you see locally. Do not rely on them as items.
 
 ---
 
@@ -117,14 +133,19 @@ up, place) for the configured number of cycles, sending the configured number of
 per tick. With **Finish in slot B** on, it does one extra move so the stack ends in B.
 
 - **Ghost clicks** run the same clicks through the local inventory only. No slot-click
-  packet is sent, so the client and server disagree about where the stack is. If a real
-  copy is unavailable, the run ends by putting a single client-only copy of the item in
-  whichever of the two slots is empty, so the item shows in both.
+  packet is sent, so the server never sees them and nothing changes server-side. This is
+  display-only on remote servers and cannot create real items without rights.
+- **Real clicks (Ghost clicks off)** send ordinary slot-click packets that the server
+  processes authoritatively, so they work on any server without installation or rights.
+  If the backend is vulnerable, the run ends with server-confirmed surplus; otherwise it
+  reports **server confirmed no extra items**.
 - **Real copy** captures the original stack and confirms that slot B was empty before the
   ghost clicks. In singleplayer it schedules a validated copy on the integrated server and
   syncs the resulting inventory. In multiplayer creative mode it sends slot B and the copy
-  with vanilla `CreativeInventoryActionC2SPacket`; the server remains authoritative and can
-  accept or reject that packet. Neither path installs or contacts a Slot Cycler server mod.
+  with vanilla `CreativeInventoryActionC2SPacket`. After the ghost-check resync, the source
+  and one-item copy must both match the captured stack before the result is called confirmed.
+  A missing or changed copy restores the display fallback instead. Neither path installs or
+  contacts a Slot Cycler server mod.
 - **Keep ghost visible** redraws that copy whenever the server clears it (after a ghost
   check, or when you click it), until a real item takes the slot, you start a new run,
   or you press **Clear ghosts** in the settings screen. The copy is display-only: the

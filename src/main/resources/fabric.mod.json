@@ -3,7 +3,7 @@
   "id": "slotcycler",
   "version": "${version}",
   "name": "Slot Cycler",
-  "description": "Client-side utility: cycle items, create real copies in singleplayer/creative mode, show display copies, check ghosts and drop surplus. No server installation needed.",
+  "description": "Client-side utility: cycle real server inventory, create confirmed copies in singleplayer/creative mode, show display copies, check ghosts and drop surplus. No server installation needed.",
   "environment": "client",
   "authors": ["ImGabri"],
   "contact": {
